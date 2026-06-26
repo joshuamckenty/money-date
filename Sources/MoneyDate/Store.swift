@@ -34,6 +34,7 @@ final class Store: ObservableObject {
     @Published private(set) var rows: [DateRow] = []
     @Published private(set) var columns: [AmountColumn] = []
     @Published private(set) var rates: [String: Double] = [:]   // "yyyy-MM-dd" → CAD per USD
+    @Published private(set) var hotKeyConfig: HotKeyConfig = .default
     @Published var selectedYear: Int
 
     private var inFlight: Set<String> = []
@@ -43,6 +44,7 @@ final class Store: ObservableObject {
         self.selectedYear = DateUtils.calendar.component(.year, from: now)
         loadState()
         loadRates()
+        loadSettings()
         if rows.isEmpty {
             resetDates()
         }
@@ -95,6 +97,12 @@ final class Store: ObservableObject {
         rows = DateUtils.monthEnds(year: year).map { DateRow(date: $0) }
         saveState()
         prefetchRates()
+    }
+
+    /// Update and persist the global copy hotkey. AppDelegate observes this and re-registers.
+    func setHotKey(_ config: HotKeyConfig) {
+        hotKeyConfig = config
+        saveSettings()
     }
 
     // MARK: - Clipboard handling
@@ -173,6 +181,7 @@ final class Store: ObservableObject {
 
     private static func stateURL() throws -> URL { try appDirectory().appendingPathComponent("state.json") }
     private static func ratesURL() throws -> URL { try appDirectory().appendingPathComponent("rates.json") }
+    private static func settingsURL() throws -> URL { try appDirectory().appendingPathComponent("settings.json") }
 
     private func loadState() {
         guard let url = try? Self.stateURL(),
@@ -200,6 +209,20 @@ final class Store: ObservableObject {
     private func saveRates() {
         guard let url = try? Self.ratesURL() else { return }
         if let data = try? JSONEncoder().encode(rates) {
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    private func loadSettings() {
+        guard let url = try? Self.settingsURL(),
+              let data = try? Data(contentsOf: url),
+              let config = try? JSONDecoder().decode(HotKeyConfig.self, from: data) else { return }
+        hotKeyConfig = config
+    }
+
+    private func saveSettings() {
+        guard let url = try? Self.settingsURL() else { return }
+        if let data = try? JSONEncoder().encode(hotKeyConfig) {
             try? data.write(to: url, options: .atomic)
         }
     }

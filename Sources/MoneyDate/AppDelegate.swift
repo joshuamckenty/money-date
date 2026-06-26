@@ -1,11 +1,13 @@
 import AppKit
 import SwiftUI
+import Combine
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var store: Store!
     private var panel: NSPanel!
     private var hotKey: HotKey?
     private var statusItem: NSStatusItem?
+    private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         store = Store()
@@ -19,8 +21,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         Clipboard.shared.start()
 
-        // ⌘⇧C copies the latest value for the topmost date — without adding a column.
-        hotKey = HotKey { [weak self] in
+        // Register the configurable copy hotkey, and re-register whenever it changes.
+        // (.sink fires immediately with the current value, installing it on launch.)
+        store.$hotKeyConfig
+            .removeDuplicates()
+            .sink { [weak self] config in self?.installHotKey(config) }
+            .store(in: &cancellables)
+    }
+
+    /// Install (or replace) the global hotkey. Setting `hotKey = nil` first forces the old
+    /// HotKey's deinit to UnregisterEventHotKey before the new one registers.
+    private func installHotKey(_ config: HotKeyConfig) {
+        hotKey = nil
+        hotKey = HotKey(keyCode: config.keyCode, modifiers: config.modifiers) { [weak self] in
             MainActor.assumeIsolated {
                 guard let value = self?.store.latestCellCADPlain() else { return }
                 Clipboard.shared.copy(value)

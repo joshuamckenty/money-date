@@ -110,8 +110,13 @@ struct ContentView: View {
     }
 
     private var footer: some View {
-        HStack {
-            Text("⌘⇧C copies latest × topmost")
+        HStack(spacing: 6) {
+            Text("Copy hotkey:")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            HotKeyRecorder(display: store.hotKeyConfig.display) { store.setHotKey($0) }
+                .frame(width: 110, height: 22)
+            Text("→ latest × topmost")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             Spacer()

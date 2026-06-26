@@ -15,8 +15,10 @@ across a set of fixed dates.
 - **Copy a number** anywhere on your Mac → a new USD column is added automatically.
 - **Copy a date** (e.g. `2025-03-31`, `03/31/2025`) → a new date row is added.
 - **Click a cell** → copies that cell's CAD value (plain number, ready to paste).
-- **⌘⇧C** (global) → copies the CAD value for the **latest** column and the
-  **topmost** (most recent) date. This copy does **not** add a new column.
+- **⌃⌥⌘C** (global, configurable) → copies the CAD value for the **latest** column
+  and the **topmost** (most recent) date. This copy does **not** add a new column.
+  Click the shortcut field in the footer and press a new combination to rebind it
+  (at least one modifier required; Escape cancels).
 - **Reset dates** → back to the most recent 12 month-ends.
 - **Year dropdown** → repopulate the rows with all 12 month-ends of a chosen year.
 
