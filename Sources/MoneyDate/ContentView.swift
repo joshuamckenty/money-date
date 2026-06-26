@@ -50,38 +50,59 @@ struct ContentView: View {
     }
 
     private var grid: some View {
-        Grid(alignment: .trailing, horizontalSpacing: 16, verticalSpacing: 6) {
+        Grid(alignment: .trailing, horizontalSpacing: 12, verticalSpacing: 6) {
             GridRow {
                 Text("Date")
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
                     .gridColumnAlignment(.leading)
                 ForEach(store.displayedColumns) { column in
-                    Text(Formatters.usdHeader(column.usd))
-                        .font(.caption.bold())
-                        .foregroundStyle(.secondary)
+                    headerCell(column)
                 }
             }
             Divider().gridCellColumns(store.displayedColumns.count + 1)
 
             ForEach(store.displayedRows) { row in
                 GridRow {
-                    Text(Formatters.dayKey(row.date))
-                        .font(.system(.body, design: .monospaced))
-                        .gridColumnAlignment(.leading)
+                    dateCell(row).gridColumnAlignment(.leading)
                     ForEach(store.displayedColumns) { column in
-                        cell(usd: column.usd, date: row.date)
+                        valueCell(row: row, column: column)
                     }
                 }
             }
         }
+        .animation(.easeOut(duration: 0.45), value: store.flashCellKey)
+        .animation(.easeOut(duration: 0.9), value: store.recentlyAddedColumnID)
+        .animation(.easeOut(duration: 0.9), value: store.recentlyAddedRowID)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: store.displayedColumns.map(\.id))
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: store.displayedRows.map(\.id))
     }
 
-    private func cell(usd: Double, date: Date) -> some View {
-        Group {
-            if let cad = store.cadValue(usd: usd, date: date) {
+    private func headerCell(_ column: AmountColumn) -> some View {
+        let added = store.recentlyAddedColumnID == column.id
+        return Text(Formatters.usdHeader(column.usd))
+            .font(.caption.bold())
+            .foregroundStyle(.secondary)
+            .pill(cellColor(flash: false, added: added))
+    }
+
+    private func dateCell(_ row: DateRow) -> some View {
+        let added = store.recentlyAddedRowID == row.id
+        return Text(Formatters.dayKey(row.date))
+            .font(.system(.body, design: .monospaced))
+            .pill(cellColor(flash: false, added: added))
+    }
+
+    private func valueCell(row: DateRow, column: AmountColumn) -> some View {
+        let key = Store.cellKey(columnID: column.id, date: row.date)
+        let isFlash = store.flashCellKey == key
+        let isAdded = store.recentlyAddedColumnID == column.id || store.recentlyAddedRowID == row.id
+        let color = cellColor(flash: isFlash, added: isAdded)
+
+        return Group {
+            if let cad = store.cadValue(usd: column.usd, date: row.date) {
                 Button {
-                    Clipboard.shared.copy(Formatters.cadPlain(cad))
+                    store.copyCell(column: column, date: row.date)
                 } label: {
                     Text(Formatters.cadDisplay(cad))
                         .font(.system(.body, design: .monospaced))
@@ -96,6 +117,13 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
+        .pill(color)
+    }
+
+    private func cellColor(flash: Bool, added: Bool) -> Color {
+        if flash { return Color.green.opacity(0.55) }
+        if added { return Color.accentColor.opacity(0.28) }
+        return .clear
     }
 
     private var emptyState: some View {
@@ -126,5 +154,14 @@ struct ContentView: View {
                     .foregroundStyle(.tertiary)
             }
         }
+    }
+}
+
+private extension View {
+    /// A rounded, padded background used to render the per-cell highlight.
+    func pill(_ color: Color) -> some View {
+        padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(RoundedRectangle(cornerRadius: 5).fill(color))
     }
 }

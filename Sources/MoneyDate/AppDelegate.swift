@@ -35,8 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hotKey = nil
         hotKey = HotKey(keyCode: config.keyCode, modifiers: config.modifiers) { [weak self] in
             MainActor.assumeIsolated {
-                guard let value = self?.store.latestCellCADPlain() else { return }
-                Clipboard.shared.copy(value)
+                _ = self?.store.copyLatest()
             }
         }
     }

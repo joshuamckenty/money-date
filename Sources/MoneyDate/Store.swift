@@ -37,7 +37,14 @@ final class Store: ObservableObject {
     @Published private(set) var hotKeyConfig: HotKeyConfig = .default
     @Published var selectedYear: Int
 
+    // Transient highlight state for visual feedback (auto-cleared after a short delay).
+    @Published private(set) var recentlyAddedRowID: UUID?
+    @Published private(set) var recentlyAddedColumnID: UUID?
+    @Published private(set) var flashCellKey: String?
+
     private var inFlight: Set<String> = []
+    private var clearAddedTask: Task<Void, Never>?
+    private var clearFlashTask: Task<Void, Never>?
 
     init() {
         let now = Date()
@@ -73,14 +80,18 @@ final class Store: ObservableObject {
     // MARK: - Mutations
 
     func addColumn(usd: Double) {
-        columns.append(AmountColumn(usd: usd, added: Date()))
+        let column = AmountColumn(usd: usd, added: Date())
+        columns.append(column)
+        markAdded(columnID: column.id)
         saveState()
     }
 
     func addRow(date: Date) {
         let key = Formatters.dayKey(date)
         guard !rows.contains(where: { Formatters.dayKey($0.date) == key }) else { return }
-        rows.append(DateRow(date: date))
+        let row = DateRow(date: date)
+        rows.append(row)
+        markAdded(rowID: row.id)
         saveState()
         fetchRate(for: date)
     }
@@ -131,12 +142,49 @@ final class Store: ObservableObject {
         return value
     }
 
-    /// CAD value for the latest column × topmost date, as a plain pasteable string.
-    /// Returns nil if there's no data or the rate isn't cached yet.
-    func latestCellCADPlain() -> String? {
-        guard let column = sortedColumns.first, let row = sortedRows.first,
-              let cad = cadValue(usd: column.usd, date: row.date) else { return nil }
-        return Formatters.cadPlain(cad)
+    static func cellKey(columnID: UUID, date: Date) -> String {
+        "\(columnID.uuidString)|\(Formatters.dayKey(date))"
+    }
+
+    /// Copy the CAD value for the latest column × topmost date (used by the global hotkey).
+    /// Does NOT add a column. Returns false if there's nothing to copy yet.
+    @discardableResult
+    func copyLatest() -> Bool {
+        guard let column = sortedColumns.first, let row = sortedRows.first else { return false }
+        return copyCell(column: column, date: row.date)
+    }
+
+    /// Copy a single cell's CAD value to the clipboard and flash it.
+    @discardableResult
+    func copyCell(column: AmountColumn, date: Date) -> Bool {
+        guard let cad = cadValue(usd: column.usd, date: date) else { return false }
+        Clipboard.shared.copy(Formatters.cadPlain(cad))
+        flash(cellKey: Self.cellKey(columnID: column.id, date: date))
+        return true
+    }
+
+    // MARK: - Visual feedback
+
+    private func markAdded(rowID: UUID? = nil, columnID: UUID? = nil) {
+        recentlyAddedRowID = rowID
+        recentlyAddedColumnID = columnID
+        clearAddedTask?.cancel()
+        clearAddedTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard !Task.isCancelled else { return }
+            self?.recentlyAddedRowID = nil
+            self?.recentlyAddedColumnID = nil
+        }
+    }
+
+    private func flash(cellKey: String) {
+        flashCellKey = cellKey
+        clearFlashTask?.cancel()
+        clearFlashTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            guard !Task.isCancelled else { return }
+            self?.flashCellKey = nil
+        }
     }
 
     // MARK: - Rates
