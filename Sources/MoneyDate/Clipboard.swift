@@ -31,10 +31,19 @@ final class Clipboard {
         let current = pasteboard.changeCount
         guard current != lastChangeCount else { return }
         lastChangeCount = current
-        guard let raw = pasteboard.string(forType: .string) else { return }
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.count <= maxLength else { return }
-        onChange?(trimmed)
+
+        // The copying app often bumps `changeCount` a beat before its data is
+        // committed across process boundaries, so an immediate read can return the
+        // PREVIOUS contents. Read after a short delay, and only if the clipboard
+        // hasn't changed again (which also avoids reacting to our own copy()).
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard let self, self.pasteboard.changeCount == current else { return }
+            guard let raw = self.pasteboard.string(forType: .string) else { return }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, trimmed.count <= self.maxLength else { return }
+            self.onChange?(trimmed)
+        }
     }
 
     /// Write text to the clipboard *without* tripping our own monitor.
