@@ -47,17 +47,24 @@ enum DateUtils {
         (1...12).compactMap { endOfMonth(year: year, month: $0) }
     }
 
+    // US (month-first) ordering by default. Year-first (ISO) forms are unambiguous;
+    // every other numeric form is listed MM-first so ambiguous dates from US docs
+    // (e.g. 07-12-2024, 12.07.2024) resolve as month-first regardless of locale.
     private static let parseFormats = [
-        "yyyy-MM-dd",
-        "yyyy/MM/dd",
-        "MM/dd/yyyy",
-        "M/d/yyyy",
-        "MM/dd/yy",
-        "M/d/yy",
-        "MMM d, yyyy",
-        "MMMM d, yyyy",
-        "d MMM yyyy",
-        "d MMMM yyyy",
+        // Year-first (unambiguous)
+        "yyyy-MM-dd", "yyyy/MM/dd", "yyyy.MM.dd",
+        // US month-first, 4-digit year
+        "MM/dd/yyyy", "M/d/yyyy",
+        "MM-dd-yyyy", "M-d-yyyy",
+        "MM.dd.yyyy", "M.d.yyyy",
+        // US month-first, 2-digit year
+        "MM/dd/yy", "M/d/yy",
+        "MM-dd-yy", "M-d-yy",
+        "MM.dd.yy", "M.d.yy",
+        // Month name
+        "MMM d, yyyy", "MMMM d, yyyy",
+        "MMM d yyyy", "MMMM d yyyy",
+        "d MMM yyyy", "d MMMM yyyy",
     ]
 
     private static let parser: DateFormatter = {
