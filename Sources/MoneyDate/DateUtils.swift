@@ -52,6 +52,8 @@ enum DateUtils {
         "yyyy/MM/dd",
         "MM/dd/yyyy",
         "M/d/yyyy",
+        "MM/dd/yy",
+        "M/d/yy",
         "MMM d, yyyy",
         "MMMM d, yyyy",
         "d MMM yyyy",
@@ -67,20 +69,50 @@ enum DateUtils {
         return df
     }()
 
-    /// Strictly parse clipboard text as a calendar date. Requires a separator so that
-    /// bare numbers (e.g. "2024") are NOT mistaken for dates — those become USD columns.
+    private static let dateDetector = try? NSDataDetector(
+        types: NSTextCheckingResult.CheckingType.date.rawValue)
+
+    /// Parse clipboard text as a calendar date. A plain number is never a date
+    /// (it becomes a USD column). Tries deterministic formats first, then falls
+    /// back to NSDataDetector for natural-language / locale formats.
     static func parseDate(_ raw: String) -> Date? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.contains(where: { "-/,".contains($0) }) else { return nil }
-        for format in parseFormats {
-            parser.dateFormat = format
-            if let date = parser.date(from: text) {
-                let year = calendar.component(.year, from: date)
-                if (1970...2100).contains(year) {
+        guard !text.isEmpty, !isPlainNumber(text) else { return nil }
+
+        // 1) Deterministic formats (require a separator).
+        if text.contains(where: { "-/,.".contains($0) }) {
+            for format in parseFormats {
+                parser.dateFormat = format
+                if let date = parser.date(from: text), inRange(date) {
                     return calendar.startOfDay(for: date)
                 }
             }
         }
+
+        // 2) Fallback: detect natural/locale dates, but only when the match
+        //    spans (nearly) the whole string so we don't pick a date out of
+        //    arbitrary text or a stray number.
+        if let detector = dateDetector {
+            let range = NSRange(text.startIndex..., in: text)
+            if let match = detector.firstMatch(in: text, options: [], range: range),
+               match.range.length >= range.length - 2,
+               let date = match.date, inRange(date) {
+                return calendar.startOfDay(for: date)
+            }
+        }
         return nil
+    }
+
+    private static func inRange(_ date: Date) -> Bool {
+        (1970...2100).contains(calendar.component(.year, from: date))
+    }
+
+    /// True if the text is just a numeric amount (optionally with $, commas, spaces).
+    private static func isPlainNumber(_ text: String) -> Bool {
+        var t = text
+        for token in ["$", ",", " ", "\u{00A0}"] {
+            t = t.replacingOccurrences(of: token, with: "")
+        }
+        return !t.isEmpty && Double(t) != nil
     }
 }
