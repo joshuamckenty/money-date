@@ -17,10 +17,6 @@ private struct PersistedState: Codable {
     var columns: [AmountColumn]
 }
 
-private struct FrankfurterResponse: Decodable {
-    let rates: [String: Double]
-}
-
 /// Owns all app state: the date rows, the USD columns, and the cached USD→CAD rates.
 /// Fetches historical rates from the ECB-backed Frankfurter API (free, no key).
 @MainActor
@@ -45,6 +41,7 @@ final class Store: ObservableObject {
     private var inFlight: Set<String> = []
     private var clearAddedTask: Task<Void, Never>?
     private var clearFlashTask: Task<Void, Never>?
+    private var refreshTimer: Timer?
 
     init() {
         let now = Date()
@@ -56,6 +53,15 @@ final class Store: ObservableObject {
             resetDates()
         }
         prefetchRates()
+        startRefreshTimer()
+    }
+
+    /// Periodically retry any still-missing rates (e.g. after the app started offline).
+    /// Cheap and coalesced by RateService, so it can't stampede the endpoint.
+    private func startRefreshTimer() {
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshMissingRates() }
+        }
     }
 
     // MARK: - Derived views
@@ -203,26 +209,28 @@ final class Store: ObservableObject {
         for row in rows { fetchRate(for: row.date) }
     }
 
+    /// Re-attempt any displayed date whose rate is still missing.
+    func refreshMissingRates() {
+        for row in rows where rates[Formatters.dayKey(row.date)] == nil {
+            fetchRate(for: row.date)
+        }
+    }
+
     private func fetchRate(for date: Date) {
         let key = Formatters.dayKey(date)
         guard rates[key] == nil, !inFlight.contains(key) else { return }
         // Future dates have no ECB rate yet; skip the request.
         guard DateUtils.calendar.startOfDay(for: date) <= DateUtils.calendar.startOfDay(for: Date()) else { return }
-        guard let url = URL(string: "https://api.frankfurter.dev/v1/\(key)?base=USD&symbols=CAD") else { return }
 
         inFlight.insert(key)
         Task { [weak self] in
-            defer { self?.inFlight.remove(key) }
-            do {
-                let (data, response) = try await URLSession.shared.data(from: url)
-                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return }
-                let decoded = try JSONDecoder().decode(FrankfurterResponse.self, from: data)
-                guard let cad = decoded.rates["CAD"], cad.isFinite, cad > 0 else { return }
-                self?.rates[key] = cad
-                self?.saveRates()
-            } catch {
-                // Network/parse failures are non-fatal; the cell stays blank and can retry later.
-            }
+            // RateService coalesces concurrent requests for the same date and
+            // retries with exponential backoff; nil means it gave up for now.
+            let rate = await RateService.shared.fetchRate(forKey: key)
+            self?.inFlight.remove(key)
+            guard let rate else { return }   // stays blank; a later refresh can retry
+            self?.rates[key] = rate
+            self?.saveRates()
         }
     }
 

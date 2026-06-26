@@ -93,20 +93,24 @@ struct ContentView: View {
     // MARK: - Frozen-pane table
 
     private var table: some View {
-        VStack(spacing: 0) {
-            // Pinned header: corner + the USD "value row".
-            HStack(spacing: 0) {
+        // Left pane (corner + date column) is frozen at the left edge — it lives
+        // OUTSIDE the horizontal scroll. The header row and the data rows share ONE
+        // horizontal scroll, so they can never desync horizontally. The only sync
+        // left is the date column tracking the data's vertical scroll.
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
                 cornerCell
-                headerViewport
+                Divider().frame(width: Metrics.dateCol)
+                dateColumn
             }
-            .frame(height: Metrics.header)
+            .frame(width: Metrics.dateCol)
 
-            Divider()
-
-            // Pinned date column + scrollable data area.
-            HStack(spacing: 0) {
-                dateViewport
-                dataScroll
+            ScrollView(.horizontal, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 0) {
+                    headerRow
+                    Divider()
+                    dataBody
+                }
             }
         }
         .animation(.easeOut(duration: 0.45), value: store.flashCellKey)
@@ -123,57 +127,47 @@ struct ContentView: View {
             .frame(width: Metrics.dateCol, height: Metrics.header, alignment: .leading)
     }
 
-    /// The USD header row — stays vertically pinned, tracks horizontal scroll.
-    private var headerViewport: some View {
-        HStack(spacing: 0) {
-            ForEach(store.displayedColumns) { headerCell($0) }
-        }
-        .offset(x: scrollOffset.x)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .clipped()
-    }
-
-    /// The date column — stays horizontally pinned, tracks vertical scroll.
-    private var dateViewport: some View {
+    /// Frozen date column; tracks the data body's vertical scroll.
+    private var dateColumn: some View {
         VStack(spacing: 0) {
             ForEach(store.displayedRows) { dateCell($0) }
         }
-        .offset(y: scrollOffset.y)
         .frame(width: Metrics.dateCol, alignment: .top)
+        .offset(y: scrollOffset.y)
         .frame(maxHeight: .infinity, alignment: .top)
         .clipped()
     }
 
-    /// The scrollable data region; scroll indicators live here.
-    private var dataScroll: some View {
-        GeometryReader { viewport in
-            ScrollView([.horizontal, .vertical]) {
-                VStack(spacing: 0) {
-                    ForEach(store.displayedRows) { row in
-                        HStack(spacing: 0) {
-                            ForEach(store.displayedColumns) { column in
-                                valueCell(row: row, column: column)
-                            }
+    /// USD header row; pinned vertically (outside the vertical scroll), scrolls horizontally.
+    private var headerRow: some View {
+        HStack(spacing: 0) {
+            ForEach(store.displayedColumns) { headerCell($0) }
+        }
+        .frame(height: Metrics.header)
+    }
+
+    /// Vertically-scrolling data rows; the vertical scroll indicator lives here.
+    private var dataBody: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(spacing: 0) {
+                ForEach(store.displayedRows) { row in
+                    HStack(spacing: 0) {
+                        ForEach(store.displayedColumns) { column in
+                            valueCell(row: row, column: column)
                         }
                     }
                 }
-                // Pin top-leading and never shrink below the viewport so the
-                // ScrollView can't center small content (which would desync the
-                // frozen header/date panes).
-                .frame(minWidth: viewport.size.width,
-                       minHeight: viewport.size.height,
-                       alignment: .topLeading)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(
-                            key: ScrollOffsetKey.self,
-                            value: geo.frame(in: .named("data")).origin)
-                    }
-                )
             }
-            .coordinateSpace(name: "data")
-            .onPreferenceChange(ScrollOffsetKey.self) { scrollOffset = $0 }
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(
+                        key: ScrollOffsetKey.self,
+                        value: geo.frame(in: .named("vbody")).origin)
+                }
+            )
         }
+        .coordinateSpace(name: "vbody")
+        .onPreferenceChange(ScrollOffsetKey.self) { scrollOffset = $0 }
     }
 
     // MARK: - Cells
