@@ -96,6 +96,16 @@ final class Store: ObservableObject {
         fetchRate(for: date)
     }
 
+    func deleteRow(id: UUID) {
+        rows.removeAll { $0.id == id }
+        saveState()
+    }
+
+    func deleteColumn(id: UUID) {
+        columns.removeAll { $0.id == id }
+        saveState()
+    }
+
     /// Back to the most recent 12 month-ends.
     func resetDates() {
         rows = DateUtils.lastMonthEnds(count: Self.defaultMonthEnds).map { DateRow(date: $0) }
