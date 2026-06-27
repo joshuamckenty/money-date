@@ -8,12 +8,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var hotKey: HotKey?
     private var statusItem: NSStatusItem?
     private var cancellables = Set<AnyCancellable>()
+    private var effectWindow: NSPanel!
+    private let effectView = EffectOverlayView(frame: .zero)
+    private var effectUnionFrame: CGRect = .zero
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         store = Store()
 
         makePanel()
+        makeEffectWindow()
         makeStatusItem()
+
+        // Drive Dopamine effects on the full-screen overlay, anchored at the table.
+        store.$effectEvent
+            .compactMap { $0 }
+            .removeDuplicates()
+            .sink { [weak self] event in
+                guard let self else { return }
+                self.effectView.fire(name: event.name, anchor: self.panelAnchorInOverlay())
+            }
+            .store(in: &cancellables)
 
         // Watch the clipboard: a copied number adds a column, a copied date adds a row.
         Clipboard.shared.onChange = { [weak store] text in
@@ -60,6 +74,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.orderFrontRegardless()  // show without stealing focus
 
         self.panel = panel
+    }
+
+    /// A transparent, click-through overlay window covering all screens, hosting the
+    /// Metal effects so they composite over other apps' windows.
+    private func makeEffectWindow() {
+        let union = NSScreen.screens.reduce(CGRect.null) { $0.union($1.frame) }
+        effectUnionFrame = union.isNull ? (NSScreen.main?.frame ?? .zero) : union
+
+        let window = NSPanel(
+            contentRect: effectUnionFrame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false)
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.ignoresMouseEvents = true            // never intercept clicks
+        window.level = .screenSaver                 // above other apps' windows
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        window.contentView = effectView
+        window.orderFrontRegardless()               // never key/main
+        effectWindow = window
+    }
+
+    /// The table panel's center, mapped into the (flipped, top-left origin) overlay
+    /// view coordinate space, so effects emanate from the table. nil-safe: center.
+    private func panelAnchorInOverlay() -> CGPoint? {
+        guard let panel else { return nil }
+        let c = CGPoint(x: panel.frame.midX, y: panel.frame.midY)   // global, bottom-left origin
+        return CGPoint(x: c.x - effectUnionFrame.minX,
+                       y: effectUnionFrame.maxY - c.y)               // → top-left origin
     }
 
     private func makeStatusItem() {

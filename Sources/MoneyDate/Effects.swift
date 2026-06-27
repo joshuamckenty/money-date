@@ -1,4 +1,3 @@
-import SwiftUI
 import AppKit
 import Metal
 import QuartzCore
@@ -40,19 +39,6 @@ private let effectFactories: [String: EffectFactory] = [
     },
 ]
 
-/// SwiftUI bridge: fires the named Dopamine effect (centered) whenever the event token changes.
-struct EffectsOverlay: NSViewRepresentable {
-    var event: Store.EffectEvent?
-
-    func makeNSView(context: Context) -> EffectOverlayView { EffectOverlayView(frame: .zero) }
-
-    func updateNSView(_ view: EffectOverlayView, context: Context) {
-        guard let event, event.token != view.lastToken else { return }
-        view.lastToken = event.token
-        view.fire(name: event.name)
-    }
-}
-
 /// Hosts the current effect's Metal layer and drives a display-link tick.
 /// Pointer-transparent and idle (no GPU) until an effect is fired.
 final class EffectOverlayView: NSView {
@@ -66,7 +52,8 @@ final class EffectOverlayView: NSView {
     private var currentName: String?
     private var vsync: CADisplayLink?
     private var activeUntil: CFTimeInterval = 0
-    var lastToken = 0
+    /// Where the effect emanates from, in this view's (flipped) local coords. nil = center.
+    private var anchorPoint: CGPoint?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -113,8 +100,10 @@ final class EffectOverlayView: NSView {
         return prepared
     }
 
-    /// Re-resolve with a fresh seed, prepare, and play the named effect (centered).
-    func fire(name: String) {
+    /// Re-resolve with a fresh seed, prepare, and play the named effect at `anchor`
+    /// (this view's flipped local coords; nil = center).
+    func fire(name: String, anchor: CGPoint? = nil) {
+        anchorPoint = anchor
         guard let prepared = prepared(name) else { return }
         if currentName != name {
             if let cur = currentName { hosts[cur]?.host.lightLayer.removeFromSuperlayer() }
@@ -153,7 +142,8 @@ final class EffectOverlayView: NSView {
             return
         }
         guard let name = currentName, let prepared = hosts[name] else { return }
-        let center = SIMD2<Float>(Float(bounds.midX), Float(bounds.midY))
-        prepared.host.tick(now: now, dpr: Float(renderScale), anchorPx: center, targetPx: .zero)
+        let c = anchorPoint ?? CGPoint(x: bounds.midX, y: bounds.midY)
+        let anchor = SIMD2<Float>(Float(c.x), Float(c.y))
+        prepared.host.tick(now: now, dpr: Float(renderScale), anchorPx: anchor, targetPx: .zero)
     }
 }
