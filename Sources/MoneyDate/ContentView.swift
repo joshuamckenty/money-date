@@ -200,7 +200,7 @@ struct ContentView: View {
                 .minimumScaleFactor(0.6)
                 .padding(.trailing, 6)
         }
-        .overlay(alignment: .topLeading) {
+        .overlay(alignment: .topTrailing) {
             if hoveredColumnID == column.id {
                 deleteButton("Delete column") { store.deleteColumn(id: column.id) }
             }

@@ -28,14 +28,21 @@ show the window or quit).
 
 ## Build & run
 
-Requires macOS 13+ and a Swift toolchain (Xcode command-line tools).
+Requires macOS 14+ and a Swift toolchain (Xcode command-line tools).
 
 ```sh
-swift run            # debug
-# or
-swift build -c release
+./scripts/build.sh           # debug
+.build/debug/MoneyDate
+# or release:
+./scripts/build.sh release
 .build/release/MoneyDate
 ```
+
+Use `scripts/build.sh` rather than a bare `swift build`: it also compiles the
+Dopamine effect shaders into each effect bundle's `default.metallib`. Plain
+`swift build` only copies the raw `.metal` source (it doesn't invoke the Metal
+compiler the way Xcode does), so without this step the visual effects silently
+fail to load (`makeDefaultLibrary` → "no default library was found").
 
 ## Notes
 
