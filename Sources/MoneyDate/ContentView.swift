@@ -215,9 +215,10 @@ struct ContentView: View {
 
     private func headerCell(_ column: AmountColumn) -> some View {
         let added = store.recentlyAddedColumnID == column.id
-        let hover = hoveredColumnID == column.id
+        let deleteHover = hoveredColumnID == column.id
         return ZStack(alignment: .trailing) {
-            RoundedRectangle(cornerRadius: 4).fill(cellColor(flash: false, added: added, hover: hover))
+            RoundedRectangle(cornerRadius: 4)
+                .fill(deleteHover ? deleteHoverColor : cellColor(flash: false, added: added))
             Text(Formatters.amount(column.usd, code: store.fromCurrency))
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
@@ -225,36 +226,31 @@ struct ContentView: View {
                 .minimumScaleFactor(0.6)
                 .padding(.trailing, 6)
         }
-        .overlay(alignment: .topTrailing) {
-            if hoveredColumnID == column.id {
-                deleteButton("Delete column") { store.deleteColumn(id: column.id, at: NSEvent.mouseLocation) }
-            }
-        }
         .frame(width: Metrics.valueCol, height: Metrics.header)
         .overlay(alignment: .leading) { columnSeparator }
         .contentShape(Rectangle())
         .onHover { hoveredColumnID = $0 ? column.id : nil }
+        .onTapGesture { store.deleteColumn(id: column.id, at: NSEvent.mouseLocation) }
+        .help("Click to delete this column")
     }
 
     private func dateCell(_ row: DateRow) -> some View {
         let added = store.recentlyAddedRowID == row.id
-        let hover = hoveredRowID == row.id
+        let deleteHover = hoveredRowID == row.id
         return ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 4).fill(cellColor(flash: false, added: added, hover: hover))
+            RoundedRectangle(cornerRadius: 4)
+                .fill(deleteHover ? deleteHoverColor : cellColor(flash: false, added: added))
             Text(Formatters.displayDate(row.date, format: store.dateFormat))
                 .font(.system(.body, design: .monospaced))
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .padding(.leading, 4)
         }
-        .overlay(alignment: .trailing) {
-            if hoveredRowID == row.id {
-                deleteButton("Delete row") { store.deleteRow(id: row.id, at: NSEvent.mouseLocation) }
-            }
-        }
         .frame(width: Metrics.dateCol, height: Metrics.row)
         .contentShape(Rectangle())
         .onHover { hoveredRowID = $0 ? row.id : nil }
+        .onTapGesture { store.deleteRow(id: row.id, at: NSEvent.mouseLocation) }
+        .help("Click to delete this row")
     }
 
     private func valueCell(row: DateRow, column: AmountColumn) -> some View {
@@ -289,8 +285,6 @@ struct ContentView: View {
         }
         .frame(width: Metrics.valueCol, height: Metrics.row)
         .overlay(alignment: .leading) { columnSeparator }
-        .contentShape(Rectangle())
-        .onHover { hoveredRowID = $0 ? row.id : (hoveredRowID == row.id ? nil : hoveredRowID) }
     }
 
     /// Subtle vertical divider between columns / very subtle row striping / header tint.
@@ -304,17 +298,8 @@ struct ContentView: View {
 
     private var headerTint: Color { Color.accentColor.opacity(0.10) }
 
-    private func deleteButton(_ help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 12))
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(.white, .red)
-        }
-        .buttonStyle(.plain)
-        .padding(1)
-        .help(help)
-    }
+    /// Themed-red fill for the delete-on-hover header/date cells.
+    private var deleteHoverColor: Color { Color.red.opacity(0.35) }
 
     private func cellColor(flash: Bool, added: Bool, hover: Bool = false) -> Color {
         if flash { return Color.green.opacity(0.55) }
