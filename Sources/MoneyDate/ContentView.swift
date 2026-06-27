@@ -26,12 +26,8 @@ struct ContentView: View {
 
     private var years: [Int] {
         let current = DateUtils.calendar.component(.year, from: Date())
-        return Array((current - 25)...(current + 1)).reversed()
+        return Array((current - 25)...current).reversed()
     }
-
-    static let dateFormatOptions = ["yyyy-MM-dd", "MM/dd/yyyy", "dd/MM/yyyy", "MMM d, yyyy", "d MMM yyyy"]
-    /// A fixed sample date so the format-picker labels are stable.
-    static let sampleDate = DateUtils.calendar.date(from: DateComponents(year: 2024, month: 12, day: 31)) ?? Date()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -68,8 +64,6 @@ struct ContentView: View {
 
     private var controls: some View {
         HStack(spacing: 10) {
-            Button("Reset dates") { store.resetDates() }
-
             Button("Add date…") { showAddDate = true }
                 .popover(isPresented: $showAddDate, arrowEdge: .bottom) { addDatePopover }
 
@@ -81,16 +75,6 @@ struct ContentView: View {
             .onChange(of: store.selectedYear) { newValue in
                 store.populate(year: newValue)
             }
-
-            Picker("Date format", selection: Binding(
-                get: { store.dateFormat },
-                set: { store.setDateFormat($0) })) {
-                ForEach(Self.dateFormatOptions, id: \.self) { fmt in
-                    Text(Formatters.displayDate(Self.sampleDate, format: fmt)).tag(fmt)
-                }
-            }
-            .labelsHidden()
-            .frame(width: 130)
 
             Spacer()
 
@@ -166,13 +150,16 @@ struct ContentView: View {
             .foregroundStyle(.secondary)
             .frame(width: Metrics.dateCol, height: Metrics.header, alignment: .leading)
             .background(AnchorReporter { point in
-                // Center over the whole first VALUE column: x = first value column
-                // center (half date col + half value col right); y = vertical center
-                // of the displayed data cells (down past the header; screen y is up).
+                // Confetti: center over the whole first VALUE column — x = first
+                // value column center; y = vertical center of the displayed data
+                // cells (down past the header; screen y is up).
+                let cols = CGFloat(store.displayedColumns.count)
                 let dataHeight = CGFloat(store.displayedRows.count) * Metrics.row
                 store.setAddAnchor(CGPoint(
                     x: point.x + Metrics.dateCol / 2 + Metrics.valueCol / 2,
                     y: point.y - (Metrics.header / 2 + 1 + dataHeight / 2)))
+                // Fail: horizontal center of the whole row (date col + value cols).
+                store.setRowCenterX(point.x - Metrics.dateCol / 2 + (Metrics.dateCol + cols * Metrics.valueCol) / 2)
             })
     }
 

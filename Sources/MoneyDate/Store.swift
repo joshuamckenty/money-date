@@ -38,6 +38,11 @@ final class Store: ObservableObject {
     static let visibleColumns = 5
     static let defaultMonthEnds = 12
 
+    // First-column date display formats offered in the menu.
+    static let dateFormatOptions = ["yyyy-MM-dd", "MM/dd/yyyy", "dd/MM/yyyy", "MMM d, yyyy", "d MMM yyyy"]
+    /// A fixed sample date so the format menu labels are stable.
+    static let dateFormatSample = DateUtils.calendar.date(from: DateComponents(year: 2024, month: 12, day: 31)) ?? Date()
+
     @Published private(set) var rows: [DateRow] = []
     @Published private(set) var columns: [AmountColumn] = []
     @Published private(set) var rates: [String: Double] = [:]   // "yyyy-MM-dd" → CAD per USD
@@ -68,6 +73,11 @@ final class Store: ObservableObject {
 
     /// Reported by the view: the table corner's current screen position.
     func setAddAnchor(_ point: CGPoint?) { addAnchorScreen = point }
+
+    /// Screen x of the whole row's horizontal center (date col + all value cols),
+    /// used to center the delete "fail" effect across the row.
+    private var rowCenterScreenX: CGFloat?
+    func setRowCenterX(_ x: CGFloat?) { rowCenterScreenX = x }
 
     private var inFlight: Set<String> = []
     private var clearAddedTask: Task<Void, Never>?
@@ -144,7 +154,14 @@ final class Store: ObservableObject {
     func deleteRow(id: UUID, at screenPoint: CGPoint? = nil) {
         rows.removeAll { $0.id == id }
         saveState()
-        fireEffect("fail", anchorScreen: screenPoint)
+        // Center the fail across the whole row: table horizontal center, row's y.
+        let anchor: CGPoint?
+        if let p = screenPoint, let cx = rowCenterScreenX {
+            anchor = CGPoint(x: cx, y: p.y)
+        } else {
+            anchor = screenPoint
+        }
+        fireEffect("fail", anchorScreen: anchor)
     }
 
     func deleteColumn(id: UUID, at screenPoint: CGPoint? = nil) {

@@ -157,6 +157,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let fsItem = NSMenuItem(title: "Full-screen effects", action: #selector(toggleFullScreenEffects), keyEquivalent: "")
         fsItem.state = fullScreenEffects ? .on : .off
         menu.addItem(fsItem)
+
+        let dateMenu = NSMenu()
+        let currentFormat = MainActor.assumeIsolated { store.dateFormat }
+        for format in Store.dateFormatOptions {
+            let mi = NSMenuItem(title: Formatters.displayDate(Store.dateFormatSample, format: format),
+                                action: #selector(selectDateFormat(_:)), keyEquivalent: "")
+            mi.representedObject = format
+            mi.state = (format == currentFormat) ? .on : .off
+            dateMenu.addItem(mi)
+        }
+        let dateItem = NSMenuItem(title: "Date format", action: nil, keyEquivalent: "")
+        dateItem.submenu = dateMenu
+        menu.addItem(dateItem)
+
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         item.menu = menu
@@ -171,6 +185,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         fullScreenEffects.toggle()
         sender.state = fullScreenEffects ? .on : .off
         repositionEffectWindow()
+    }
+
+    @objc private func selectDateFormat(_ sender: NSMenuItem) {
+        guard let format = sender.representedObject as? String else { return }
+        MainActor.assumeIsolated { store.setDateFormat(format) }
+        sender.menu?.items.forEach { $0.state = ($0.representedObject as? String == format) ? .on : .off }
     }
 
     @objc private func quit() {
