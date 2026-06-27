@@ -47,23 +47,23 @@ enum DateUtils {
         (1...12).compactMap { endOfMonth(year: year, month: $0) }
     }
 
-    // US (month-first) ordering by default. Year-first (ISO) forms are unambiguous;
-    // every other numeric form is listed MM-first so ambiguous dates from US docs
-    // (e.g. 07-12-2024, 12.07.2024) resolve as month-first regardless of locale.
-    private static let parseFormats = [
-        // Year-first (unambiguous)
+    // Year-first (ISO) forms are unambiguous and always tried first.
+    private static let isoFormats = [
         "yyyy-MM-dd", "yyyy/MM/dd", "yyyy.MM.dd",
-        // US month-first, 4-digit year
-        "MM/dd/yyyy", "M/d/yyyy",
-        "MM-dd-yyyy", "M-d-yyyy",
-        "MM.dd.yyyy", "M.d.yyyy",
-        // US month-first, 2-digit year
-        "MM/dd/yy", "M/d/yy",
-        "MM-dd-yy", "M-d-yy",
-        "MM.dd.yy", "M.d.yy",
-        // Month name
-        "MMM d, yyyy", "MMMM d, yyyy",
-        "MMM d yyyy", "MMMM d yyyy",
+    ]
+    // Ambiguous numeric forms, month-first (US) ordering.
+    private static let monthFirstFormats = [
+        "MM/dd/yyyy", "M/d/yyyy", "MM-dd-yyyy", "M-d-yyyy", "MM.dd.yyyy", "M.d.yyyy",
+        "MM/dd/yy", "M/d/yy", "MM-dd-yy", "M-d-yy", "MM.dd.yy", "M.d.yy",
+    ]
+    // Ambiguous numeric forms, day-first ordering.
+    private static let dayFirstFormats = [
+        "dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "d-M-yyyy", "dd.MM.yyyy", "d.M.yyyy",
+        "dd/MM/yy", "d/M/yy", "dd-MM-yy", "d-M-yy", "dd.MM.yy", "d.M.yy",
+    ]
+    // Month-name forms are unambiguous and always tried.
+    private static let monthNameFormats = [
+        "MMM d, yyyy", "MMMM d, yyyy", "MMM d yyyy", "MMMM d yyyy",
         "d MMM yyyy", "d MMMM yyyy",
     ]
 
@@ -80,15 +80,18 @@ enum DateUtils {
         types: NSTextCheckingResult.CheckingType.date.rawValue)
 
     /// Parse clipboard text as a calendar date. A plain number is never a date
-    /// (it becomes a USD column). Tries deterministic formats first, then falls
-    /// back to NSDataDetector for natural-language / locale formats.
-    static func parseDate(_ raw: String) -> Date? {
+    /// (it becomes a value column). Tries deterministic formats first — ambiguous
+    /// numeric dates resolve month-first or day-first per `monthFirst` (driven by
+    /// the FROM currency) — then falls back to NSDataDetector.
+    static func parseDate(_ raw: String, monthFirst: Bool = true) -> Date? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isPlainNumber(text) else { return nil }
 
         // 1) Deterministic formats (require a separator).
         if text.contains(where: { "-/,.".contains($0) }) {
-            for format in parseFormats {
+            let numeric = monthFirst ? monthFirstFormats : dayFirstFormats
+            let formats = isoFormats + numeric + monthNameFormats
+            for format in formats {
                 parser.dateFormat = format
                 if let date = parser.date(from: text), inRange(date) {
                     return calendar.startOfDay(for: date)

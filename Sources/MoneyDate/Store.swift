@@ -17,6 +17,12 @@ private struct PersistedState: Codable {
     var columns: [AmountColumn]
 }
 
+private struct AppSettings: Codable {
+    var hotKey: HotKeyConfig
+    var fromCurrency: String
+    var toCurrency: String
+}
+
 /// Owns all app state: the date rows, the USD columns, and the cached USD→CAD rates.
 /// Fetches historical rates from the ECB-backed Frankfurter API (free, no key).
 @MainActor
@@ -31,6 +37,8 @@ final class Store: ObservableObject {
     @Published private(set) var columns: [AmountColumn] = []
     @Published private(set) var rates: [String: Double] = [:]   // "yyyy-MM-dd" → CAD per USD
     @Published private(set) var hotKeyConfig: HotKeyConfig = .default
+    @Published private(set) var fromCurrency: String = "USD"
+    @Published private(set) var toCurrency: String = "CAD"
     @Published var selectedYear: Int
 
     // Transient highlight state for visual feedback (auto-cleared after a short delay).
@@ -77,10 +85,16 @@ final class Store: ObservableObject {
     var hiddenColumnCount: Int { max(0, columns.count - Self.visibleColumns) }
     var hiddenRowCount: Int { max(0, rows.count - Self.visibleRows) }
 
-    /// CAD value of `usd` as of `date`, or nil if the rate isn't cached yet.
-    func cadValue(usd: Double, date: Date) -> Double? {
-        guard let rate = rates[Formatters.dayKey(date)] else { return nil }
-        return usd * rate
+    /// Cache key for a rate: "FROM|TO|yyyy-MM-dd".
+    private func rateKey(_ date: Date) -> String {
+        "\(fromCurrency)|\(toCurrency)|\(Formatters.dayKey(date))"
+    }
+
+    /// `amount` (in the FROM currency) converted to the TO currency as of `date`,
+    /// or nil if that rate isn't cached yet.
+    func convertedValue(amount: Double, date: Date) -> Double? {
+        guard let rate = rates[rateKey(date)] else { return nil }
+        return amount * rate
     }
 
     // MARK: - Mutations
@@ -132,12 +146,22 @@ final class Store: ObservableObject {
         saveSettings()
     }
 
+    /// Update the From/To currencies, persist, and fetch rates for the new pair.
+    func setCurrencies(from: String, to: String) {
+        guard Currency.isValid(from), Currency.isValid(to) else { return }
+        fromCurrency = from
+        toCurrency = to
+        saveSettings()
+        prefetchRates()
+    }
+
     // MARK: - Clipboard handling
 
     /// Route freshly-copied text: a parseable date adds a row, a parseable number adds a column.
     /// (Input is already length-bounded and trimmed by `Clipboard`.)
     func handlePaste(_ text: String) {
-        if let date = DateUtils.parseDate(text) {
+        let monthFirst = Currency.usesMonthFirstDates(fromCurrency)
+        if let date = DateUtils.parseDate(text, monthFirst: monthFirst) {
             addRow(date: date)
         } else if let usd = Self.parseUSD(text) {
             addColumn(usd: usd)
@@ -170,11 +194,11 @@ final class Store: ObservableObject {
         return copyCell(column: column, date: row.date)
     }
 
-    /// Copy a single cell's CAD value to the clipboard and flash it.
+    /// Copy a single cell's converted (TO-currency) value to the clipboard and flash it.
     @discardableResult
     func copyCell(column: AmountColumn, date: Date) -> Bool {
-        guard let cad = cadValue(usd: column.usd, date: date) else { return false }
-        Clipboard.shared.copy(Formatters.cadPlain(cad))
+        guard let value = convertedValue(amount: column.usd, date: date) else { return false }
+        Clipboard.shared.copy(Formatters.plain(value))
         flash(cellKey: Self.cellKey(columnID: column.id, date: date))
         return true
     }
@@ -209,24 +233,26 @@ final class Store: ObservableObject {
         for row in rows { fetchRate(for: row.date) }
     }
 
-    /// Re-attempt any displayed date whose rate is still missing.
+    /// Re-attempt any displayed date whose rate is still missing for the current pair.
     func refreshMissingRates() {
-        for row in rows where rates[Formatters.dayKey(row.date)] == nil {
+        for row in rows where rates[rateKey(row.date)] == nil {
             fetchRate(for: row.date)
         }
     }
 
     private func fetchRate(for date: Date) {
-        let key = Formatters.dayKey(date)
+        let key = rateKey(date)
         guard rates[key] == nil, !inFlight.contains(key) else { return }
         // Future dates have no ECB rate yet; skip the request.
         guard DateUtils.calendar.startOfDay(for: date) <= DateUtils.calendar.startOfDay(for: Date()) else { return }
 
+        let dayKey = Formatters.dayKey(date)
+        let from = fromCurrency, to = toCurrency
         inFlight.insert(key)
         Task { [weak self] in
-            // RateService coalesces concurrent requests for the same date and
-            // retries with exponential backoff; nil means it gave up for now.
-            let rate = await RateService.shared.fetchRate(forKey: key)
+            // RateService coalesces concurrent requests for the same (date,from,to)
+            // and retries with exponential backoff; nil means it gave up for now.
+            let rate = await RateService.shared.fetchRate(date: dayKey, from: from, to: to)
             self?.inFlight.remove(key)
             guard let rate else { return }   // stays blank; a later refresh can retry
             self?.rates[key] = rate
@@ -281,14 +307,21 @@ final class Store: ObservableObject {
 
     private func loadSettings() {
         guard let url = try? Self.settingsURL(),
-              let data = try? Data(contentsOf: url),
-              let config = try? JSONDecoder().decode(HotKeyConfig.self, from: data) else { return }
-        hotKeyConfig = config
+              let data = try? Data(contentsOf: url) else { return }
+        if let settings = try? JSONDecoder().decode(AppSettings.self, from: data) {
+            hotKeyConfig = settings.hotKey
+            if Currency.isValid(settings.fromCurrency) { fromCurrency = settings.fromCurrency }
+            if Currency.isValid(settings.toCurrency) { toCurrency = settings.toCurrency }
+        } else if let legacy = try? JSONDecoder().decode(HotKeyConfig.self, from: data) {
+            // Backward compat: settings.json used to hold a bare HotKeyConfig.
+            hotKeyConfig = legacy
+        }
     }
 
     private func saveSettings() {
         guard let url = try? Self.settingsURL() else { return }
-        if let data = try? JSONEncoder().encode(hotKeyConfig) {
+        let settings = AppSettings(hotKey: hotKeyConfig, fromCurrency: fromCurrency, toCurrency: toCurrency)
+        if let data = try? JSONEncoder().encode(settings) {
             try? data.write(to: url, options: .atomic)
         }
     }

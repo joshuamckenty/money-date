@@ -66,10 +66,22 @@ struct ContentView: View {
 
             Spacer()
 
-            Text("USD → CAD")
-                .font(.headline)
-                .foregroundStyle(.secondary)
+            currencyPicker(selection: Binding(
+                get: { store.fromCurrency },
+                set: { store.setCurrencies(from: $0, to: store.toCurrency) }))
+            Text("→").foregroundStyle(.secondary)
+            currencyPicker(selection: Binding(
+                get: { store.toCurrency },
+                set: { store.setCurrencies(from: store.fromCurrency, to: $0) }))
         }
+    }
+
+    private func currencyPicker(selection: Binding<String>) -> some View {
+        Picker("", selection: selection) {
+            ForEach(Currency.all, id: \.self) { Text($0).tag($0) }
+        }
+        .labelsHidden()
+        .frame(width: 76)
     }
 
     private var addDatePopover: some View {
@@ -176,7 +188,7 @@ struct ContentView: View {
         let added = store.recentlyAddedColumnID == column.id
         return ZStack(alignment: .trailing) {
             RoundedRectangle(cornerRadius: 4).fill(cellColor(flash: false, added: added))
-            Text(Formatters.usdHeader(column.usd))
+            Text(Formatters.amount(column.usd, code: store.fromCurrency))
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -219,11 +231,11 @@ struct ContentView: View {
 
         return ZStack(alignment: .trailing) {
             RoundedRectangle(cornerRadius: 4).fill(color)
-            if let cad = store.cadValue(usd: column.usd, date: row.date) {
+            if let value = store.convertedValue(amount: column.usd, date: row.date) {
                 Button {
                     store.copyCell(column: column, date: row.date)
                 } label: {
-                    Text(Formatters.cadDisplay(cad))
+                    Text(Formatters.amount(value, code: store.toCurrency))
                         .font(.system(.body, design: .monospaced))
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
@@ -232,7 +244,7 @@ struct ContentView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Click to copy \(Formatters.cadPlain(cad))")
+                .help("Click to copy \(Formatters.plain(value))")
             } else {
                 Text("…")
                     .foregroundStyle(.tertiary)

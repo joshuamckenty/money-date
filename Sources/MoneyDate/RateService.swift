@@ -13,26 +13,27 @@ actor RateService {
 
     private var tasks: [String: Task<Double?, Never>] = [:]
 
-    /// CAD-per-USD for the given "yyyy-MM-dd" key, or nil after exhausting retries.
-    /// Concurrent callers for the same key await a single shared fetch.
-    func fetchRate(forKey key: String) async -> Double? {
-        if let existing = tasks[key] {
+    /// TO-per-FROM rate for the given date, or nil after exhausting retries.
+    /// Concurrent callers for the same (date, from, to) await a single shared fetch.
+    func fetchRate(date: String, from: String, to: String) async -> Double? {
+        let coalesceKey = "\(from)|\(to)|\(date)"
+        if let existing = tasks[coalesceKey] {
             return await existing.value
         }
         let task = Task<Double?, Never> {
-            await Self.fetchWithBackoff(key: key)
+            await Self.fetchWithBackoff(date: date, from: from, to: to)
         }
-        tasks[key] = task
+        tasks[coalesceKey] = task
         let result = await task.value
-        tasks[key] = nil   // cleared so a later refresh can retry a failed key
+        tasks[coalesceKey] = nil   // cleared so a later refresh can retry a failed key
         return result
     }
 
-    private static func fetchWithBackoff(key: String) async -> Double? {
+    private static func fetchWithBackoff(date: String, from: String, to: String) async -> Double? {
         let maxAttempts = 5
         var delay: UInt64 = 1_000_000_000   // 1s, doubling, capped at 30s
         for attempt in 0..<maxAttempts {
-            if let rate = await fetchOnce(key: key) { return rate }
+            if let rate = await fetchOnce(date: date, from: from, to: to) { return rate }
             if Task.isCancelled { return nil }
             if attempt < maxAttempts - 1 {
                 try? await Task.sleep(nanoseconds: delay)
@@ -42,17 +43,18 @@ actor RateService {
         return nil
     }
 
-    private static func fetchOnce(key: String) async -> Double? {
-        // `key` is an internally-formatted yyyy-MM-dd string, never raw user input.
-        guard let url = URL(string: "https://api.frankfurter.dev/v1/\(key)?base=USD&symbols=CAD") else {
+    private static func fetchOnce(date: String, from: String, to: String) async -> Double? {
+        // `date` is internally-formatted yyyy-MM-dd; from/to come from the Currency
+        // allow-list — never raw user input — so the URL is built from safe values.
+        guard let url = URL(string: "https://api.frankfurter.dev/v1/\(date)?base=\(from)&symbols=\(to)") else {
             return nil
         }
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
             let decoded = try JSONDecoder().decode(FrankfurterResponse.self, from: data)
-            guard let cad = decoded.rates["CAD"], cad.isFinite, cad > 0 else { return nil }
-            return cad
+            guard let rate = decoded.rates[to], rate.isFinite, rate > 0 else { return nil }
+            return rate
         } catch {
             return nil
         }

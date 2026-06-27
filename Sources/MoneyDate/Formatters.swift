@@ -13,34 +13,28 @@ enum Formatters {
         return df
     }()
 
-    private static let usd: NumberFormatter = {
-        let nf = NumberFormatter()
-        nf.numberStyle = .currency
-        nf.currencyCode = "USD"
-        nf.maximumFractionDigits = 2
-        return nf
-    }()
+    private static var currencyFormatters: [String: NumberFormatter] = [:]
 
-    private static let cad: NumberFormatter = {
+    private static func currencyFormatter(_ code: String) -> NumberFormatter {
+        if let existing = currencyFormatters[code] { return existing }
         let nf = NumberFormatter()
         nf.numberStyle = .currency
-        nf.currencyCode = "CAD"
+        nf.currencyCode = code
         nf.maximumFractionDigits = 2
+        currencyFormatters[code] = nf
         return nf
-    }()
+    }
 
     static func dayKey(_ date: Date) -> String { isoDay.string(from: date) }
 
-    static func usdHeader(_ value: Double) -> String {
-        usd.string(from: NSNumber(value: value)) ?? String(format: "$%.2f", value)
-    }
-
-    static func cadDisplay(_ value: Double) -> String {
-        cad.string(from: NSNumber(value: value)) ?? String(format: "C$%.2f", value)
+    /// Formatted amount in the given currency, e.g. "US$1,234.56" or "C$1,655.43".
+    static func amount(_ value: Double, code: String) -> String {
+        currencyFormatter(code).string(from: NSNumber(value: value))
+            ?? String(format: "%@ %.2f", code, value)
     }
 
     /// Plain, separator-free value suitable for pasting into a spreadsheet.
-    static func cadPlain(_ value: Double) -> String {
+    static func plain(_ value: Double) -> String {
         String(format: "%.2f", value)
     }
 }
