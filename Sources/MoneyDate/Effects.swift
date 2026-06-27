@@ -77,6 +77,8 @@ final class EffectOverlayView: NSView {
     private var currentName: String?
     private var vsync: CADisplayLink?
     private var activeUntil: CFTimeInterval = 0
+    /// Radial alpha mask: effects fade out toward the overlay edges.
+    private let fadeMask = CAGradientLayer()
     /// Where the effect emanates from, in this view's (flipped) local coords. nil = center.
     private var anchorPoint: CGPoint?
     /// Target box size (points) the effect concentrates within. .zero = effect default.
@@ -86,6 +88,13 @@ final class EffectOverlayView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
+
+        fadeMask.type = .radial
+        fadeMask.colors = [NSColor.white.cgColor, NSColor.white.cgColor, NSColor.clear.cgColor]
+        fadeMask.locations = [0.0, 0.55, 1.0]
+        fadeMask.startPoint = CGPoint(x: 0.5, y: 0.5)
+        fadeMask.endPoint = CGPoint(x: 1.0, y: 1.0)
+        layer?.mask = fadeMask
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unused") }
 
@@ -157,12 +166,16 @@ final class EffectOverlayView: NSView {
 
     override func layout() {
         super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)   // no implicit animation on resize/move
+        fadeMask.frame = bounds
         if let name = currentName, let prepared = hosts[name] {
             let l = prepared.host.lightLayer
             l.frame = bounds
             l.contentsScale = renderScale
             l.drawableSize = canvasPx()
         }
+        CATransaction.commit()
     }
 
     @objc private func tick() {
