@@ -31,6 +31,8 @@ struct ContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            header
+
             controls
 
             Divider()
@@ -42,9 +44,29 @@ struct ContentView: View {
             }
 
             footer
+
+            copyright
         }
         .padding(12)
         .frame(minWidth: 420, minHeight: 260)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("money-date")
+                .font(.headline)
+            Text("Currency conversions across fixed dates — copy a number to add a column, a date to add a row.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var copyright: some View {
+        Text("© 2026 Joshua McKenty")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity, alignment: .center)
     }
 
     // MARK: - Controls
@@ -139,10 +161,12 @@ struct ContentView: View {
             .foregroundStyle(.secondary)
             .frame(width: Metrics.dateCol, height: Metrics.header, alignment: .leading)
             .background(AnchorReporter { point in
-                // Nudge from the corner cell's upper-left toward its center: half a
-                // corner-cell width right and half its height down (screen y is up).
-                store.setAddAnchor(CGPoint(x: point.x + Metrics.dateCol / 2,
-                                           y: point.y - Metrics.header / 2))
+                // From the corner cell's center to the first VALUE cell's center:
+                // right by half the date col + half a value col; down past the
+                // header into the first data row (screen y is up, so down is -).
+                store.setAddAnchor(CGPoint(
+                    x: point.x + Metrics.dateCol / 2 + Metrics.valueCol / 2,
+                    y: point.y - (Metrics.header / 2 + Metrics.row / 2 + 1)))
             })
     }
 
