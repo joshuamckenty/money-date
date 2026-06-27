@@ -15,6 +15,12 @@ private struct ScrollOffsetKey: PreferenceKey {
     static func reduce(value: inout CGPoint, nextValue: () -> CGPoint) { value = nextValue() }
 }
 
+/// Horizontal scroll offset — tracked so scrolling re-renders and re-reports anchors.
+private struct HOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
 struct ContentView: View {
     @ObservedObject var store: Store
 
@@ -23,6 +29,8 @@ struct ContentView: View {
     @State private var showAddDate = false
     @State private var newDate = Date()
     @State private var scrollOffset: CGPoint = .zero
+    /// Tracked only to force a re-render (→ AnchorReporter re-report) on horizontal scroll.
+    @State private var hScrollX: CGFloat = 0
 
     private var years: [Int] {
         let current = DateUtils.calendar.component(.year, from: Date())
@@ -139,7 +147,15 @@ struct ContentView: View {
                         Divider()
                         dataBody(height: dataAreaHeight)
                     }
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: HOffsetKey.self,
+                                                   value: geo.frame(in: .named("hscroll")).minX)
+                        }
+                    )
                 }
+                .coordinateSpace(name: "hscroll")
+                .onPreferenceChange(HOffsetKey.self) { hScrollX = $0 }
             }
             // Visible row center x (for row deletes), robust to horizontal scroll.
             .background(AnchorReporter { store.setTableCenterX($0.midX) })
