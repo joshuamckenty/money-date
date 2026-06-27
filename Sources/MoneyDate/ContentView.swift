@@ -366,13 +366,30 @@ struct AnchorReporter: NSViewRepresentable {
 
     final class ReporterNSView: NSView {
         var onChange: ((CGPoint) -> Void)?
-        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); report() }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            NotificationCenter.default.removeObserver(self)
+            if let window {
+                // Re-report when the panel moves or changes display, so the
+                // screen-coords anchor stays correct across screens.
+                for note in [NSWindow.didMoveNotification, NSWindow.didChangeScreenNotification] {
+                    NotificationCenter.default.addObserver(self, selector: #selector(report),
+                                                           name: note, object: window)
+                }
+            }
+            report()
+        }
+
         override func layout() { super.layout(); report() }
-        func report() {
+
+        @objc func report() {
             guard let window else { return }
             let inWindow = convert(bounds, to: nil)
             let onScreen = window.convertToScreen(inWindow)
             onChange?(CGPoint(x: onScreen.midX, y: onScreen.midY))
         }
+
+        deinit { NotificationCenter.default.removeObserver(self) }
     }
 }

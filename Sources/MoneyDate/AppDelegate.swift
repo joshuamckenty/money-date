@@ -25,6 +25,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         makeEffectWindow()
         makeStatusItem()
 
+        // Keep the effect overlay tracking the panel — including across displays.
+        for note in [NSWindow.didMoveNotification, NSWindow.didChangeScreenNotification] {
+            NotificationCenter.default.addObserver(forName: note, object: panel, queue: .main) { [weak self] _ in
+                self?.repositionEffectWindow()
+            }
+        }
+
         // Drive Dopamine effects on the full-screen overlay, anchored at the table.
         store.$effectEvent
             .compactMap { $0 }
@@ -34,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.repositionEffectWindow()   // keep the surface around the panel
                 self.effectView.fire(name: event.name,
                                      anchor: self.overlayAnchor(for: event),
-                                     targetSize: CGSize(width: 144, height: 60))   // points
+                                     targetSize: CGSize(width: 150, height: 150))   // points
             }
             .store(in: &cancellables)
 
@@ -115,7 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func repositionEffectWindow() {
         effectFrame = panelExpandedFrame()
-        effectWindow.setFrame(effectFrame, display: false)
+        effectWindow.setFrame(effectFrame, display: true)   // relocates across screens
     }
 
     /// Where the effect should originate, in the overlay view's flipped (top-left)
