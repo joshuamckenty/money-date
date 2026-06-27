@@ -185,9 +185,13 @@ final class Store: ObservableObject {
         prefetchRates()
     }
 
-    /// Replace rows with the 12 month-ends of `year`.
+    /// Replace rows with the month-ends of `year` that have already occurred
+    /// (no future months — e.g. selecting the current year stops at last month-end).
     func populate(year: Int) {
-        rows = DateUtils.monthEnds(year: year).map { DateRow(date: $0) }
+        let today = DateUtils.calendar.startOfDay(for: Date())
+        rows = DateUtils.monthEnds(year: year)
+            .filter { DateUtils.calendar.startOfDay(for: $0) <= today }
+            .map { DateRow(date: $0) }
         saveState()
         prefetchRates()
     }
