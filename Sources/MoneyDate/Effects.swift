@@ -54,6 +54,8 @@ final class EffectOverlayView: NSView {
     private var activeUntil: CFTimeInterval = 0
     /// Where the effect emanates from, in this view's (flipped) local coords. nil = center.
     private var anchorPoint: CGPoint?
+    /// Target box size (points) the effect concentrates within. .zero = effect default.
+    private var targetSize: CGSize = .zero
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -81,8 +83,8 @@ final class EffectOverlayView: NSView {
         vsync = link
     }
 
-    // Soft glow effects don't need full 3× super-sampling; cap at 2×.
-    private var renderScale: CGFloat { min(window?.backingScaleFactor ?? 2, 2.0) }
+    // Soft glow effects don't need full-res super-sampling; cap low for fill speed.
+    private var renderScale: CGFloat { min(window?.backingScaleFactor ?? 1.5, 1.5) }
 
     private func canvasPx() -> CGSize {
         let scale = renderScale
@@ -101,9 +103,11 @@ final class EffectOverlayView: NSView {
     }
 
     /// Re-resolve with a fresh seed, prepare, and play the named effect at `anchor`
-    /// (this view's flipped local coords; nil = center).
-    func fire(name: String, anchor: CGPoint? = nil) {
+    /// (this view's flipped local coords; nil = center), sized to `targetSize`
+    /// (.zero = the effect's own default size).
+    func fire(name: String, anchor: CGPoint? = nil, targetSize: CGSize = .zero) {
         anchorPoint = anchor
+        self.targetSize = targetSize
         guard let prepared = prepared(name) else { return }
         if currentName != name {
             if let cur = currentName { hosts[cur]?.host.lightLayer.removeFromSuperlayer() }
@@ -144,6 +148,7 @@ final class EffectOverlayView: NSView {
         guard let name = currentName, let prepared = hosts[name] else { return }
         let c = anchorPoint ?? CGPoint(x: bounds.midX, y: bounds.midY)
         let anchor = SIMD2<Float>(Float(c.x), Float(c.y))
-        prepared.host.tick(now: now, dpr: Float(renderScale), anchorPx: anchor, targetPx: .zero)
+        let target = SIMD2<Float>(Float(targetSize.width), Float(targetSize.height))
+        prepared.host.tick(now: now, dpr: Float(renderScale), anchorPx: anchor, targetPx: target)
     }
 }

@@ -10,7 +10,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var effectWindow: NSPanel!
     private let effectView = EffectOverlayView(frame: .zero)
-    private var effectUnionFrame: CGRect = .zero
+    private var effectFrame: CGRect = .zero
+    /// How far the effect drawing surface extends beyond the panel, each side.
+    private let effectMargin: CGFloat = 400
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         store = Store()
@@ -25,7 +27,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .removeDuplicates()
             .sink { [weak self] event in
                 guard let self else { return }
-                self.effectView.fire(name: event.name, anchor: self.panelAnchorInOverlay())
+                self.repositionEffectWindow()   // keep the surface around the panel
+                self.effectView.fire(name: event.name,
+                                     anchor: self.panelAnchorInOverlay(),
+                                     targetSize: CGSize(width: 150, height: 30))   // ~cell-sized
             }
             .store(in: &cancellables)
 
@@ -76,14 +81,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.panel = panel
     }
 
-    /// A transparent, click-through overlay window covering all screens, hosting the
-    /// Metal effects so they composite over other apps' windows.
+    /// A transparent, click-through overlay window hosting the Metal effects so they
+    /// composite over other apps' windows. Kept small (panel + margin) for speed,
+    /// and repositioned to follow the panel before each fire.
     private func makeEffectWindow() {
-        let union = NSScreen.screens.reduce(CGRect.null) { $0.union($1.frame) }
-        effectUnionFrame = union.isNull ? (NSScreen.main?.frame ?? .zero) : union
-
         let window = NSPanel(
-            contentRect: effectUnionFrame,
+            contentRect: panelExpandedFrame(),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false)
@@ -96,6 +99,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.contentView = effectView
         window.orderFrontRegardless()               // never key/main
         effectWindow = window
+        repositionEffectWindow()
+    }
+
+    /// The panel's frame grown by `effectMargin` on every side (falls back to a
+    /// centered box if the panel isn't up yet).
+    private func panelExpandedFrame() -> CGRect {
+        let base = panel?.frame ?? CGRect(x: 0, y: 0, width: 460, height: 320)
+        return base.insetBy(dx: -effectMargin, dy: -effectMargin)
+    }
+
+    private func repositionEffectWindow() {
+        effectFrame = panelExpandedFrame()
+        effectWindow.setFrame(effectFrame, display: false)
     }
 
     /// The table panel's center, mapped into the (flipped, top-left origin) overlay
@@ -103,8 +119,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func panelAnchorInOverlay() -> CGPoint? {
         guard let panel else { return nil }
         let c = CGPoint(x: panel.frame.midX, y: panel.frame.midY)   // global, bottom-left origin
-        return CGPoint(x: c.x - effectUnionFrame.minX,
-                       y: effectUnionFrame.maxY - c.y)               // → top-left origin
+        return CGPoint(x: c.x - effectFrame.minX,
+                       y: effectFrame.maxY - c.y)                    // → top-left origin
     }
 
     private func makeStatusItem() {
