@@ -67,13 +67,18 @@ final class Store: ObservableObject {
     }
     @Published private(set) var effectEvent: EffectEvent?
     private var effectToken = 0
-    /// Screen-coords (bottom-left) of the table's top-left, where added rows/columns
-    /// appear — used to anchor the "add" confetti. Plain var (no re-render on update).
-    private var addAnchorScreen: CGPoint?
+    /// Effect anchor (screen coords, bottom-left), assembled from the visible row
+    /// center x and the column data center y. Plain vars (no re-render on update).
+    private var anchorScreenX: CGFloat?
+    private var anchorScreenY: CGFloat?
+    private var addAnchorScreen: CGPoint? {
+        guard let x = anchorScreenX, let y = anchorScreenY else { return nil }
+        return CGPoint(x: x, y: y)
+    }
 
-    /// Reported by the view: the grid-center screen position (row center x,
-    /// column vertical-center y) used to anchor effects.
-    func setAddAnchor(_ point: CGPoint?) { addAnchorScreen = point }
+    /// Reported by the view: x = visible table/row center, y = column data center.
+    func setAddAnchorX(_ x: CGFloat?) { anchorScreenX = x }
+    func setAddAnchorY(_ y: CGFloat?) { anchorScreenY = y }
 
     private var inFlight: Set<String> = []
     private var clearAddedTask: Task<Void, Never>?

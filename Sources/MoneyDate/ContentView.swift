@@ -125,7 +125,7 @@ struct ContentView: View {
         // (even in a very small window). The date column tracks the body's scroll.
         GeometryReader { geo in
             let dataAreaHeight = max(0, geo.size.height - Metrics.header - 1)
-            HStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 0) {
                 VStack(spacing: 0) {
                     cornerCell
                     Divider().frame(width: Metrics.dateCol)
@@ -141,8 +141,8 @@ struct ContentView: View {
                     }
                 }
             }
-            // Anchor effects at the VISIBLE table center (robust to scrolling).
-            .background(AnchorReporter { store.setAddAnchor($0) })
+            // Effect anchor X = visible table center (robust to horizontal scroll).
+            .background(AnchorReporter { store.setAddAnchorX($0.x) })
             .animation(.easeOut(duration: 0.45), value: store.flashCellKey)
             .animation(.easeOut(duration: 0.9), value: store.recentlyAddedColumnID)
             .animation(.easeOut(duration: 0.9), value: store.recentlyAddedRowID)
@@ -202,6 +202,9 @@ struct ContentView: View {
                         value: geo.frame(in: .named("vbody")).origin)
                 }
             )
+            // Effect anchor Y = the data cells' vertical center (the column may
+            // not fill the table), so effects center on the column content.
+            .background(AnchorReporter { store.setAddAnchorY($0.y) })
         }
         .frame(height: height)
         .coordinateSpace(name: "vbody")
