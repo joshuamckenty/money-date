@@ -2,6 +2,10 @@ import AppKit
 import SwiftUI
 import Combine
 
+private extension CGRect {
+    var center: CGPoint { CGPoint(x: midX, y: midY) }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var store: Store!
     private var panel: NSPanel!
@@ -29,8 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 guard let self else { return }
                 self.repositionEffectWindow()   // keep the surface around the panel
                 self.effectView.fire(name: event.name,
-                                     anchor: self.panelAnchorInOverlay(),
-                                     targetSize: CGSize(width: 150, height: 30))   // ~cell-sized
+                                     anchor: self.overlayAnchor(for: event),
+                                     targetSize: CGSize(width: 70, height: 24))
             }
             .store(in: &cancellables)
 
@@ -114,13 +118,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         effectWindow.setFrame(effectFrame, display: false)
     }
 
-    /// The table panel's center, mapped into the (flipped, top-left origin) overlay
-    /// view coordinate space, so effects emanate from the table. nil-safe: center.
-    private func panelAnchorInOverlay() -> CGPoint? {
-        guard let panel else { return nil }
-        let c = CGPoint(x: panel.frame.midX, y: panel.frame.midY)   // global, bottom-left origin
-        return CGPoint(x: c.x - effectFrame.minX,
-                       y: effectFrame.maxY - c.y)                    // → top-left origin
+    /// Where the effect should originate, in the overlay view's flipped (top-left)
+    /// local coords: the event's screen anchor (the clicked cell) if present,
+    /// otherwise the table panel's center.
+    private func overlayAnchor(for event: Store.EffectEvent) -> CGPoint? {
+        let screenPoint = event.anchorScreen ?? panel?.frame.center
+        guard let p = screenPoint else { return nil }
+        return CGPoint(x: p.x - effectFrame.minX,        // global bottom-left → overlay
+                       y: effectFrame.maxY - p.y)         // → top-left origin
     }
 
     private func makeStatusItem() {

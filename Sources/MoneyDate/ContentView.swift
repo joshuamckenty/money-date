@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Fixed cell metrics so the three frozen panes (header row, date column, data grid) align exactly.
 private enum Metrics {
@@ -233,7 +234,7 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 4).fill(color)
             if let value = store.convertedValue(amount: column.usd, date: row.date) {
                 Button {
-                    store.copyCell(column: column, date: row.date)
+                    store.copyCell(column: column, date: row.date, at: NSEvent.mouseLocation)
                 } label: {
                     Text(Formatters.amount(value, code: store.toCurrency))
                         .font(.system(.body, design: .monospaced))

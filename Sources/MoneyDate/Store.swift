@@ -51,9 +51,12 @@ final class Store: ObservableObject {
     @Published private(set) var flashCellKey: String?
 
     /// A fired Dopamine effect. The monotonic token lets the overlay detect a new fire.
+    /// `anchorScreen` (global screen coords, bottom-left origin) is where the burst
+    /// should originate; nil falls back to the panel center.
     struct EffectEvent: Equatable {
         var token: Int
         var name: String
+        var anchorScreen: CGPoint?
     }
     @Published private(set) var effectEvent: EffectEvent?
     private var effectToken = 0
@@ -208,12 +211,14 @@ final class Store: ObservableObject {
         return copyCell(column: column, date: row.date)
     }
 
-    /// Copy a single cell's converted (TO-currency) value to the clipboard and flash it.
+    /// Copy a single cell's converted (TO-currency) value to the clipboard, flash the
+    /// cell, and burst the ripple effect at `screenPoint` (the click location).
     @discardableResult
-    func copyCell(column: AmountColumn, date: Date) -> Bool {
+    func copyCell(column: AmountColumn, date: Date, at screenPoint: CGPoint? = nil) -> Bool {
         guard let value = convertedValue(amount: column.usd, date: date) else { return false }
         Clipboard.shared.copy(Formatters.plain(value))
         flash(cellKey: Self.cellKey(columnID: column.id, date: date))
+        fireEffect("ripple", anchorScreen: screenPoint)
         return true
     }
 
@@ -234,7 +239,6 @@ final class Store: ObservableObject {
 
     private func flash(cellKey: String) {
         flashCellKey = cellKey
-        fireEffect("ripple")
         clearFlashTask?.cancel()
         clearFlashTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 700_000_000)
@@ -244,9 +248,9 @@ final class Store: ObservableObject {
     }
 
     /// Fire a Dopamine effect by name; the monotonic token signals a new play.
-    private func fireEffect(_ name: String) {
+    private func fireEffect(_ name: String, anchorScreen: CGPoint? = nil) {
         effectToken += 1
-        effectEvent = EffectEvent(token: effectToken, name: name)
+        effectEvent = EffectEvent(token: effectToken, name: name, anchorScreen: anchorScreen)
     }
 
     // MARK: - Rates
