@@ -307,6 +307,20 @@ struct ContentView: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
+            Text("build \(Self.buildStamp)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
     }
+
+    /// Build time of the running binary (its modification date) — lets you confirm
+    /// which build is live.
+    private static let buildStamp: String = {
+        guard let url = Bundle.main.executableURL,
+              let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate else { return "?" }
+        let df = DateFormatter()
+        df.dateFormat = "MMM d HH:mm:ss"
+        return df.string(from: date)
+    }()
 }

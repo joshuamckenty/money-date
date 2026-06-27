@@ -4,6 +4,10 @@ import Combine
 struct DateRow: Identifiable, Codable, Equatable {
     var id = UUID()
     var date: Date
+    /// When this row was captured/added. nil for default month-ends (they fall
+    /// back to calendar order); set for copied / manually-added dates so the most
+    /// recently captured date sorts to the top.
+    var added: Date? = nil
 }
 
 struct AmountColumn: Identifiable, Codable, Equatable {
@@ -82,8 +86,10 @@ final class Store: ObservableObject {
 
     // MARK: - Derived views
 
-    /// Rows newest-first; the first element is the "topmost date".
-    var sortedRows: [DateRow] { rows.sorted { $0.date > $1.date } }
+    /// Rows newest-capture-first; the first element is the "topmost date" the hotkey
+    /// targets. Captured/added rows (real `added` timestamp) float above default
+    /// month-ends, which fall back to calendar-descending order.
+    var sortedRows: [DateRow] { rows.sorted { ($0.added ?? $0.date) > ($1.added ?? $1.date) } }
     /// Columns newest-first; the first element is the "latest value".
     var sortedColumns: [AmountColumn] { columns.sorted { $0.added > $1.added } }
 
@@ -117,7 +123,7 @@ final class Store: ObservableObject {
     func addRow(date: Date) {
         let key = Formatters.dayKey(date)
         guard !rows.contains(where: { Formatters.dayKey($0.date) == key }) else { return }
-        let row = DateRow(date: date)
+        let row = DateRow(date: date, added: Date())
         rows.append(row)
         markAdded(rowID: row.id)
         saveState()
