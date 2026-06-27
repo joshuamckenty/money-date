@@ -22,6 +22,14 @@ private struct EffectFactory {
     let build: (MTLDevice) -> (host: any AnyEffectHost, resolve: (DopeResolveInput) -> [String: DopeValue])?
 }
 
+/// Per-effect "feeling" (mood ∈ celebratory/electric/serene). Tweak intensity
+/// (0…1) and whimsy (0…1) to scale each effect's energy.
+private let effectFeelings: [String: (mood: String, intensity: Double, whimsy: Double)] = [
+    "confetti": ("celebratory", 0.85, 0.5),
+    "ripple":   ("serene", 0.35, 0.2),
+]
+private let defaultFeeling = (mood: "celebratory", intensity: 0.85, whimsy: 0.5)
+
 private let effectFactories: [String: EffectFactory] = [
     "confetti": EffectFactory { device in
         guard let lib = try? device.makeDefaultLibrary(bundle: ConfettiResources.bundle),
@@ -118,7 +126,8 @@ final class EffectOverlayView: NSView {
             layer?.addSublayer(layerToAttach)
             currentName = name
         }
-        let feeling = DopeResolveInput(mood: "celebratory", intensity: 0.85, whimsy: 0.5, seed: randomSeed())
+        let f = effectFeelings[name] ?? defaultFeeling
+        let feeling = DopeResolveInput(mood: f.mood, intensity: f.intensity, whimsy: f.whimsy, seed: randomSeed())
         let params = prepared.resolve(feeling)
         try? prepared.host.prepare(params: params)
         prepared.host.play()

@@ -139,10 +139,10 @@ struct ContentView: View {
             .foregroundStyle(.secondary)
             .frame(width: Metrics.dateCol, height: Metrics.header, alignment: .leading)
             .background(AnchorReporter { point in
-                // Nudge from the corner cell's center to a cell center: half a
-                // cell-width right and half a cell-height down (screen y is up).
-                store.setAddAnchor(CGPoint(x: point.x + Metrics.valueCol / 2,
-                                           y: point.y - Metrics.row / 2))
+                // Nudge from the corner cell's upper-left toward its center: half a
+                // corner-cell width right and half its height down (screen y is up).
+                store.setAddAnchor(CGPoint(x: point.x + Metrics.dateCol / 2,
+                                           y: point.y - Metrics.header / 2))
             })
     }
 
