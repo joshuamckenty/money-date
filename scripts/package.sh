@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # Build a distributable MoneyDate.app and a money-date.dmg.
 #
-# The app is ad-hoc signed (required for the arm64 binary to launch at all) but
-# NOT Developer-ID signed or notarized — friends will hit a Gatekeeper warning
-# and must allow it via System Settings > Privacy & Security > "Open Anyway"
-# (or: xattr -dr com.apple.quarantine /Applications/MoneyDate.app). To ship
-# warning-free you'd need a paid Apple Developer ID cert + notarization.
+# Signed/notarized path (warning-free for friends), if available:
+#   1. Create a "Developer ID Application" cert (Xcode > Settings > Accounts >
+#      Manage Certificates > + > Developer ID Application), then either let this
+#      script auto-detect it or pass SIGN_IDENTITY="Developer ID Application: ...".
+#   2. One-time notary credential setup:
+#        xcrun notarytool store-credentials money-date \
+#          --apple-id you@example.com --team-id <TEAMID> --password <app-specific-pw>
+#      then run with NOTARY_PROFILE=money-date.
+# Without a Developer ID cert it ad-hoc signs (runs, but Gatekeeper warns; allow
+# via System Settings > Privacy & Security > "Open Anyway", or
+# xattr -dr com.apple.quarantine /Applications/MoneyDate.app).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -47,9 +53,19 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-# 3. Ad-hoc sign (so the binary launches on Apple Silicon).
-codesign --force --deep --sign - "$APP"
-codesign --verify --deep --strict "$APP" && echo "ad-hoc signature OK"
+# 3. Sign. Prefer a Developer ID Application cert (hardened runtime, for
+#    notarization); fall back to ad-hoc so the arm64 binary at least launches.
+SIGN_IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning \
+    | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)}"
+if [ -n "$SIGN_IDENTITY" ]; then
+    echo "Signing with: $SIGN_IDENTITY"
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
+    codesign --verify --strict "$APP" && echo "Developer ID signature OK"
+else
+    echo "No 'Developer ID Application' cert found — ad-hoc signing (Gatekeeper will warn)."
+    codesign --force --deep --sign - "$APP"
+    codesign --verify --deep --strict "$APP" && echo "ad-hoc signature OK"
+fi
 
 # 4. Build the DMG from a staging folder (app + drag-to-Applications symlink).
 STAGE="$DIST/dmg"
@@ -58,5 +74,15 @@ cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 hdiutil create -volname "money-date" -srcfolder "$STAGE" -ov -format UDZO "$DIST/money-date.dmg" >/dev/null
 rm -rf "$STAGE"
+
+# 5. Notarize + staple the DMG (only with a Developer ID cert + notary profile).
+if [ -n "$SIGN_IDENTITY" ] && [ -n "${NOTARY_PROFILE:-}" ]; then
+    echo "Notarizing (this can take a few minutes)…"
+    xcrun notarytool submit "$DIST/money-date.dmg" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$DIST/money-date.dmg"
+    echo "Notarized + stapled."
+else
+    echo "Skipped notarization (need a Developer ID cert and NOTARY_PROFILE set)."
+fi
 
 echo "Built: $DIST/money-date.dmg"
