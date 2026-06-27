@@ -5,8 +5,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/10in30/dopamine.git",
       "state" : {
-        "revision" : "4266e307aa4d5195d8baa294e8ae0e5e779b128d",
-        "version" : "0.3.0"
+        "revision" : "68554b9ba294bc6448dae01c80942f9c945e9ced",
+        "version" : "0.4.0"
       }
     }
   ],

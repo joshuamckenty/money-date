@@ -16,6 +16,9 @@ protocol AnyEffectHost: AnyObject {
     func prepare(params: [String: DopeValue]) throws
     func play()
     func tick(now: CFTimeInterval, dpr: Float, anchorPx: SIMD2<Float>, targetPx: SIMD2<Float>)
+    /// Hosts the overlay layer in `view` with orientation handled correctly
+    /// (sets isGeometryFlipped per view.isFlipped). The single correct attach path.
+    func attach(to view: NSView)
 }
 extension MetalOverlayHost: AnyEffectHost {}
 
@@ -153,11 +156,13 @@ final class EffectOverlayView: NSView {
         guard let prepared = prepared(name) else { return }
         if currentName != name {
             if let cur = currentName { hosts[cur]?.host.lightLayer.removeFromSuperlayer() }
-            let layerToAttach = prepared.host.lightLayer
-            layerToAttach.frame = bounds
-            layerToAttach.contentsScale = renderScale
-            layerToAttach.drawableSize = canvasPx()
-            layer?.addSublayer(layerToAttach)
+            let l = prepared.host.lightLayer
+            l.frame = bounds
+            l.contentsScale = renderScale
+            l.drawableSize = canvasPx()
+            // attach(to:) hosts the layer with correct orientation (isGeometryFlipped
+            // per self.isFlipped) — the single correct path; don't addSublayer manually.
+            prepared.host.attach(to: self)
             currentName = name
         }
         let f = effectFeelings[name] ?? defaultFeeling
