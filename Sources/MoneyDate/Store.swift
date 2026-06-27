@@ -69,16 +69,28 @@ final class Store: ObservableObject {
     private var effectToken = 0
     /// Effect anchor (screen coords, bottom-left), assembled from the visible row
     /// center x and the column data center y. Plain vars (no re-render on update).
-    private var anchorScreenX: CGFloat?
-    private var anchorScreenY: CGFloat?
-    private var addAnchorScreen: CGPoint? {
-        guard let x = anchorScreenX, let y = anchorScreenY else { return nil }
-        return CGPoint(x: x, y: y)
+    /// The value-cells block in screen coords (bottom-left origin), reported by the
+    /// view; effect anchors are computed from it. The visible row center x (for
+    /// row deletes) is reported separately.
+    private var dataRectScreen: CGRect?
+    private var tableCenterScreenX: CGFloat?
+    func setDataRect(_ rect: CGRect?) { dataRectScreen = rect }
+    func setTableCenterX(_ x: CGFloat?) { tableCenterScreenX = x }
+
+    /// Center of value column `index` (0 = leftmost = newest), at the column's data
+    /// vertical center.
+    private func columnAnchor(_ index: Int) -> CGPoint? {
+        guard let r = dataRectScreen else { return nil }
+        return CGPoint(x: r.minX + (CGFloat(index) + 0.5) * Metrics.valueCol, y: r.midY)
     }
 
-    /// Reported by the view: x = visible table/row center, y = column data center.
-    func setAddAnchorX(_ x: CGFloat?) { anchorScreenX = x }
-    func setAddAnchorY(_ y: CGFloat?) { anchorScreenY = y }
+    /// Center of the cell at displayed (column, row) index (screen y is up, so the
+    /// top row is at the rect's max-y).
+    private func cellAnchor(columnIndex: Int, rowIndex: Int) -> CGPoint? {
+        guard let r = dataRectScreen else { return nil }
+        return CGPoint(x: r.minX + (CGFloat(columnIndex) + 0.5) * Metrics.valueCol,
+                       y: r.maxY - (CGFloat(rowIndex) + 0.5) * Metrics.row)
+    }
 
     private var inFlight: Set<String> = []
     private var clearAddedTask: Task<Void, Never>?
@@ -155,9 +167,9 @@ final class Store: ObservableObject {
     func deleteRow(id: UUID, at screenPoint: CGPoint? = nil) {
         rows.removeAll { $0.id == id }
         saveState()
-        // Center the fail across the whole row: row center x, deleted row's y.
+        // Center the fail across the whole row: visible row center x, deleted row's y.
         let anchor: CGPoint?
-        if let p = screenPoint, let cx = addAnchorScreen?.x {
+        if let p = screenPoint, let cx = tableCenterScreenX {
             anchor = CGPoint(x: cx, y: p.y)
         } else {
             anchor = screenPoint
@@ -166,16 +178,11 @@ final class Store: ObservableObject {
     }
 
     func deleteColumn(id: UUID, at screenPoint: CGPoint? = nil) {
+        // Center the fail on the removed column (its index, before removal).
+        let index = displayedColumns.firstIndex { $0.id == id }
         columns.removeAll { $0.id == id }
         saveState()
-        // Center the fail over the whole column: deleted column's x, column's
-        // vertical center y (same y the confetti uses — all columns share rows).
-        let anchor: CGPoint?
-        if let p = screenPoint, let cy = addAnchorScreen?.y {
-            anchor = CGPoint(x: p.x, y: cy)
-        } else {
-            anchor = screenPoint
-        }
+        let anchor = index.flatMap { columnAnchor($0) } ?? screenPoint
         fireEffect("fail", anchorScreen: anchor)
     }
 
@@ -264,8 +271,19 @@ final class Store: ObservableObject {
         guard let value = convertedValue(amount: column.usd, date: date) else { return false }
         Clipboard.shared.copy(Formatters.plain(value))
         flash(cellKey: Self.cellKey(columnID: column.id, date: date))
-        fireEffect("solarbloom", anchorScreen: screenPoint)
+        // A click gives the cursor location; otherwise (hotkey) compute the cell's
+        // center from its displayed column/row indices so it lands on that cell.
+        let anchor = screenPoint ?? cellAnchorFor(column: column, date: date)
+        fireEffect("solarbloom", anchorScreen: anchor)
         return true
+    }
+
+    private func cellAnchorFor(column: AmountColumn, date: Date) -> CGPoint? {
+        let key = Formatters.dayKey(date)
+        guard let col = displayedColumns.firstIndex(where: { $0.id == column.id }),
+              let row = displayedRows.firstIndex(where: { Formatters.dayKey($0.date) == key })
+        else { return nil }
+        return cellAnchor(columnIndex: col, rowIndex: row)
     }
 
     // MARK: - Visual feedback
@@ -273,7 +291,7 @@ final class Store: ObservableObject {
     private func markAdded(rowID: UUID? = nil, columnID: UUID? = nil) {
         recentlyAddedRowID = rowID
         recentlyAddedColumnID = columnID
-        fireEffect("confetti", anchorScreen: addAnchorScreen)
+        fireEffect("confetti", anchorScreen: columnAnchor(0))   // newest column is leftmost
         clearAddedTask?.cancel()
         clearAddedTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_200_000_000)

@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Fixed cell metrics so the three frozen panes (header row, date column, data grid) align exactly.
-private enum Metrics {
+enum Metrics {
     static let dateCol: CGFloat = 100
     static let valueCol: CGFloat = 150
     static let row: CGFloat = 26
@@ -141,8 +141,8 @@ struct ContentView: View {
                     }
                 }
             }
-            // Effect anchor X = visible table center (robust to horizontal scroll).
-            .background(AnchorReporter { store.setAddAnchorX($0.x) })
+            // Visible row center x (for row deletes), robust to horizontal scroll.
+            .background(AnchorReporter { store.setTableCenterX($0.midX) })
             .animation(.easeOut(duration: 0.45), value: store.flashCellKey)
             .animation(.easeOut(duration: 0.9), value: store.recentlyAddedColumnID)
             .animation(.easeOut(duration: 0.9), value: store.recentlyAddedRowID)
@@ -202,9 +202,9 @@ struct ContentView: View {
                         value: geo.frame(in: .named("vbody")).origin)
                 }
             )
-            // Effect anchor Y = the data cells' vertical center (the column may
-            // not fill the table), so effects center on the column content.
-            .background(AnchorReporter { store.setAddAnchorY($0.y) })
+            // The value-cells block in screen coords; column/row/cell centers are
+            // computed from this so effects land exactly on the right cell/column.
+            .background(AnchorReporter { store.setDataRect($0) })
         }
         .frame(height: height)
         .coordinateSpace(name: "vbody")
@@ -375,11 +375,11 @@ struct ContentView: View {
     }()
 }
 
-/// Reports its on-screen center (screen coords, bottom-left origin, matching
-/// NSEvent.mouseLocation) whenever it moves or lays out — used to anchor the
-/// "add" confetti at the table corner where new rows/columns appear.
+/// Reports its on-screen frame (screen coords, bottom-left origin, matching
+/// NSEvent.mouseLocation) whenever it moves or lays out — used to compute exact
+/// effect anchors (column/row/cell centers) from the data-cells block.
 struct AnchorReporter: NSViewRepresentable {
-    var onChange: (CGPoint) -> Void
+    var onChange: (CGRect) -> Void
 
     func makeNSView(context: Context) -> ReporterNSView {
         let view = ReporterNSView()
@@ -393,7 +393,7 @@ struct AnchorReporter: NSViewRepresentable {
     }
 
     final class ReporterNSView: NSView {
-        var onChange: ((CGPoint) -> Void)?
+        var onChange: ((CGRect) -> Void)?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -413,9 +413,7 @@ struct AnchorReporter: NSViewRepresentable {
 
         @objc func report() {
             guard let window else { return }
-            let inWindow = convert(bounds, to: nil)
-            let onScreen = window.convertToScreen(inWindow)
-            onChange?(CGPoint(x: onScreen.midX, y: onScreen.midY))
+            onChange?(window.convertToScreen(convert(bounds, to: nil)))
         }
 
         deinit { NotificationCenter.default.removeObserver(self) }
