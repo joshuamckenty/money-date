@@ -52,9 +52,10 @@ struct ContentView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text("money-date")
-                .font(.headline)
+                .font(.system(.title3, design: .rounded, weight: .bold))
+                .foregroundStyle(Color.accentColor)
             Text("Currency conversions across fixed dates — copy a number to add a column, a date to add a row.")
-                .font(.caption)
+                .font(.system(.caption, design: .rounded))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -146,27 +147,30 @@ struct ContentView: View {
 
     private var cornerCell: some View {
         Text("Date")
-            .font(.caption.bold())
+            .font(.system(.caption, design: .rounded, weight: .semibold))
             .foregroundStyle(.secondary)
+            .padding(.leading, 4)
             .frame(width: Metrics.dateCol, height: Metrics.header, alignment: .leading)
+            .background(headerTint)
             .background(AnchorReporter { point in
-                // Confetti: center over the whole first VALUE column — x = first
-                // value column center; y = vertical center of the displayed data
-                // cells (down past the header; screen y is up).
+                // Anchor effects at the grid's center: x = horizontal center of the
+                // whole row (date col + all value cols); y = vertical center of the
+                // displayed data cells (down past the header; screen y is up).
                 let cols = CGFloat(store.displayedColumns.count)
                 let dataHeight = CGFloat(store.displayedRows.count) * Metrics.row
+                let rowCenterX = point.x - Metrics.dateCol / 2 + (Metrics.dateCol + cols * Metrics.valueCol) / 2
                 store.setAddAnchor(CGPoint(
-                    x: point.x + Metrics.dateCol / 2 + Metrics.valueCol / 2,
+                    x: rowCenterX,
                     y: point.y - (Metrics.header / 2 + 1 + dataHeight / 2)))
-                // Fail: horizontal center of the whole row (date col + value cols).
-                store.setRowCenterX(point.x - Metrics.dateCol / 2 + (Metrics.dateCol + cols * Metrics.valueCol) / 2)
             })
     }
 
     /// Frozen date column; tracks the data body's vertical scroll.
     private var dateColumn: some View {
         VStack(spacing: 0) {
-            ForEach(store.displayedRows) { dateCell($0) }
+            ForEach(Array(store.displayedRows.enumerated()), id: \.element.id) { index, row in
+                dateCell(row).background(rowFill(index))
+            }
         }
         .frame(width: Metrics.dateCol, alignment: .top)
         .offset(y: scrollOffset.y)
@@ -180,18 +184,20 @@ struct ContentView: View {
             ForEach(store.displayedColumns) { headerCell($0) }
         }
         .frame(height: Metrics.header)
+        .background(headerTint)
     }
 
     /// Vertically-scrolling data rows; the vertical scroll indicator lives here.
     private var dataBody: some View {
         ScrollView(.vertical, showsIndicators: true) {
             VStack(spacing: 0) {
-                ForEach(store.displayedRows) { row in
+                ForEach(Array(store.displayedRows.enumerated()), id: \.element.id) { index, row in
                     HStack(spacing: 0) {
                         ForEach(store.displayedColumns) { column in
                             valueCell(row: row, column: column)
                         }
                     }
+                    .background(rowFill(index))
                 }
             }
             .background(
@@ -225,6 +231,7 @@ struct ContentView: View {
             }
         }
         .frame(width: Metrics.valueCol, height: Metrics.header)
+        .overlay(alignment: .leading) { columnSeparator }
         .contentShape(Rectangle())
         .onHover { hoveredColumnID = $0 ? column.id : nil }
     }
@@ -279,7 +286,19 @@ struct ContentView: View {
             }
         }
         .frame(width: Metrics.valueCol, height: Metrics.row)
+        .overlay(alignment: .leading) { columnSeparator }
     }
+
+    /// Subtle vertical divider between columns / very subtle row striping / header tint.
+    private var columnSeparator: some View {
+        Rectangle().fill(Color.primary.opacity(0.08)).frame(width: 0.5)
+    }
+
+    private func rowFill(_ index: Int) -> Color {
+        index.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.04)
+    }
+
+    private var headerTint: Color { Color.accentColor.opacity(0.10) }
 
     private func deleteButton(_ help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {

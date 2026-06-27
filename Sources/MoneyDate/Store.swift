@@ -71,13 +71,9 @@ final class Store: ObservableObject {
     /// appear — used to anchor the "add" confetti. Plain var (no re-render on update).
     private var addAnchorScreen: CGPoint?
 
-    /// Reported by the view: the table corner's current screen position.
+    /// Reported by the view: the grid-center screen position (row center x,
+    /// column vertical-center y) used to anchor effects.
     func setAddAnchor(_ point: CGPoint?) { addAnchorScreen = point }
-
-    /// Screen x of the whole row's horizontal center (date col + all value cols),
-    /// used to center the delete "fail" effect across the row.
-    private var rowCenterScreenX: CGFloat?
-    func setRowCenterX(_ x: CGFloat?) { rowCenterScreenX = x }
 
     private var inFlight: Set<String> = []
     private var clearAddedTask: Task<Void, Never>?
@@ -154,9 +150,9 @@ final class Store: ObservableObject {
     func deleteRow(id: UUID, at screenPoint: CGPoint? = nil) {
         rows.removeAll { $0.id == id }
         saveState()
-        // Center the fail across the whole row: table horizontal center, row's y.
+        // Center the fail across the whole row: row center x, deleted row's y.
         let anchor: CGPoint?
-        if let p = screenPoint, let cx = rowCenterScreenX {
+        if let p = screenPoint, let cx = addAnchorScreen?.x {
             anchor = CGPoint(x: cx, y: p.y)
         } else {
             anchor = screenPoint
