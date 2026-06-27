@@ -27,11 +27,19 @@ private struct EffectFactory {
 /// Per-effect "feeling" (mood ∈ celebratory/electric/serene). Tweak intensity
 /// (0…1) and whimsy (0…1) to scale each effect's energy.
 private let effectFeelings: [String: (mood: String, intensity: Double, whimsy: Double)] = [
-    "confetti":   ("electric", 0.03, 0.5),
-    "solarbloom": ("electric", 0.6, 0.22),
-    "fail":       ("electric", 0.6, 0.22),
+    "confetti":   ("electric", 0.25, 1.0),
+    "fail":       ("serene", 0.01, 0.15),
+    "solarbloom": ("electric", 0.05, 0.0),
 ]
 private let defaultFeeling = (mood: "celebratory", intensity: 0.85, whimsy: 0.5)
+
+/// Per-effect target box size (points). fail is half the size of the others.
+private let effectTargetSizes: [String: CGSize] = [
+    "confetti":   CGSize(width: 150, height: 150),
+    "solarbloom": CGSize(width: 150, height: 150),
+    "fail":       CGSize(width: 75, height: 75),
+]
+private let defaultTargetSize = CGSize(width: 150, height: 150)
 
 private let effectFactories: [String: EffectFactory] = [
     "confetti": EffectFactory { device in
@@ -137,11 +145,11 @@ final class EffectOverlayView: NSView {
     }
 
     /// Re-resolve with a fresh seed, prepare, and play the named effect at `anchor`
-    /// (this view's flipped local coords; nil = center), sized to `targetSize`
-    /// (.zero = the effect's own default size).
-    func fire(name: String, anchor: CGPoint? = nil, targetSize: CGSize = .zero) {
+    /// (this view's flipped local coords; nil = center). The target box size is
+    /// looked up per effect.
+    func fire(name: String, anchor: CGPoint? = nil) {
         anchorPoint = anchor
-        self.targetSize = targetSize
+        self.targetSize = effectTargetSizes[name] ?? defaultTargetSize
         guard let prepared = prepared(name) else { return }
         if currentName != name {
             if let cur = currentName { hosts[cur]?.host.lightLayer.removeFromSuperlayer() }

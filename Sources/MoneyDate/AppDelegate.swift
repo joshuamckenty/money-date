@@ -41,9 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .sink { [weak self] event in
                 guard let self else { return }
                 self.repositionEffectWindow()   // keep the surface around the panel
-                self.effectView.fire(name: event.name,
-                                     anchor: self.overlayAnchor(for: event),
-                                     targetSize: CGSize(width: 150, height: 150))   // points
+                self.effectView.fire(name: event.name, anchor: self.overlayAnchor(for: event))
             }
             .store(in: &cancellables)
 
