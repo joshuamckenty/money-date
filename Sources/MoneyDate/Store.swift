@@ -60,6 +60,12 @@ final class Store: ObservableObject {
     }
     @Published private(set) var effectEvent: EffectEvent?
     private var effectToken = 0
+    /// Screen-coords (bottom-left) of the table's top-left, where added rows/columns
+    /// appear — used to anchor the "add" confetti. Plain var (no re-render on update).
+    private var addAnchorScreen: CGPoint?
+
+    /// Reported by the view: the table corner's current screen position.
+    func setAddAnchor(_ point: CGPoint?) { addAnchorScreen = point }
 
     private var inFlight: Set<String> = []
     private var clearAddedTask: Task<Void, Never>?
@@ -227,7 +233,7 @@ final class Store: ObservableObject {
     private func markAdded(rowID: UUID? = nil, columnID: UUID? = nil) {
         recentlyAddedRowID = rowID
         recentlyAddedColumnID = columnID
-        fireEffect("confetti")
+        fireEffect("confetti", anchorScreen: addAnchorScreen)
         clearAddedTask?.cancel()
         clearAddedTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_200_000_000)

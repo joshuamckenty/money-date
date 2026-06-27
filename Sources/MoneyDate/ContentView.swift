@@ -138,6 +138,7 @@ struct ContentView: View {
             .font(.caption.bold())
             .foregroundStyle(.secondary)
             .frame(width: Metrics.dateCol, height: Metrics.header, alignment: .leading)
+            .background(AnchorReporter { store.setAddAnchor($0) })
     }
 
     /// Frozen date column; tracks the data body's vertical scroll.
@@ -319,4 +320,34 @@ struct ContentView: View {
         df.dateFormat = "MMM d HH:mm:ss"
         return df.string(from: date)
     }()
+}
+
+/// Reports its on-screen center (screen coords, bottom-left origin, matching
+/// NSEvent.mouseLocation) whenever it moves or lays out — used to anchor the
+/// "add" confetti at the table corner where new rows/columns appear.
+struct AnchorReporter: NSViewRepresentable {
+    var onChange: (CGPoint) -> Void
+
+    func makeNSView(context: Context) -> ReporterNSView {
+        let view = ReporterNSView()
+        view.onChange = onChange
+        return view
+    }
+
+    func updateNSView(_ view: ReporterNSView, context: Context) {
+        view.onChange = onChange
+        view.report()
+    }
+
+    final class ReporterNSView: NSView {
+        var onChange: ((CGPoint) -> Void)?
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); report() }
+        override func layout() { super.layout(); report() }
+        func report() {
+            guard let window else { return }
+            let inWindow = convert(bounds, to: nil)
+            let onScreen = window.convertToScreen(inWindow)
+            onChange?(CGPoint(x: onScreen.midX, y: onScreen.midY))
+        }
+    }
 }

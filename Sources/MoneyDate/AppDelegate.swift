@@ -34,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.repositionEffectWindow()   // keep the surface around the panel
                 self.effectView.fire(name: event.name,
                                      anchor: self.overlayAnchor(for: event),
-                                     targetSize: CGSize(width: 70, height: 24))
+                                     targetSize: CGSize(width: 48, height: 20))   // points
             }
             .store(in: &cancellables)
 
