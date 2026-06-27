@@ -108,8 +108,8 @@ final class EffectOverlayView: NSView {
         vsync = link
     }
 
-    // Soft glow effects don't need full-res super-sampling; cap low for fill speed.
-    private var renderScale: CGFloat { min(window?.backingScaleFactor ?? 1.5, 1.5) }
+    // Cap at 2× (native Retina); enough for crisp effects without over-sampling.
+    private var renderScale: CGFloat { min(window?.backingScaleFactor ?? 2, 2.0) }
 
     private func canvasPx() -> CGSize {
         let scale = renderScale

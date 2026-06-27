@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var effectWindow: NSPanel!
     private let effectView = EffectOverlayView(frame: .zero)
     private var effectFrame: CGRect = .zero
+    /// How far the effect drawing surface extends beyond the panel, each side.
+    private let effectMargin: CGFloat = 400
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         store = Store()
@@ -83,10 +85,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.panel = panel
     }
 
-    /// A transparent, click-through overlay window covering the whole desktop so the
-    /// Metal effects can spill across the screen over other apps' windows.
+    /// A transparent, click-through overlay window hosting the Metal effects so they
+    /// composite over other apps' windows. Kept to the panel + margin for speed,
+    /// and repositioned to follow the panel before each fire.
     private func makeEffectWindow() {
-        effectFrame = screenUnionFrame()
+        effectFrame = panelExpandedFrame()
         let window = NSPanel(
             contentRect: effectFrame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -103,14 +106,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         effectWindow = window
     }
 
-    /// The union of all screens (fallback: the main screen).
-    private func screenUnionFrame() -> CGRect {
-        let union = NSScreen.screens.reduce(CGRect.null) { $0.union($1.frame) }
-        return union.isNull ? (NSScreen.main?.frame ?? .zero) : union
+    /// The panel's frame grown by `effectMargin` on every side (falls back to a
+    /// centered box if the panel isn't up yet).
+    private func panelExpandedFrame() -> CGRect {
+        let base = panel?.frame ?? CGRect(x: 0, y: 0, width: 460, height: 320)
+        return base.insetBy(dx: -effectMargin, dy: -effectMargin)
     }
 
     private func repositionEffectWindow() {
-        effectFrame = screenUnionFrame()
+        effectFrame = panelExpandedFrame()
         effectWindow.setFrame(effectFrame, display: false)
     }
 
