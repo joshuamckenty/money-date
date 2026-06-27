@@ -167,7 +167,15 @@ final class Store: ObservableObject {
     func deleteColumn(id: UUID, at screenPoint: CGPoint? = nil) {
         columns.removeAll { $0.id == id }
         saveState()
-        fireEffect("fail", anchorScreen: screenPoint)
+        // Center the fail over the whole column: deleted column's x, column's
+        // vertical center y (same y the confetti uses — all columns share rows).
+        let anchor: CGPoint?
+        if let p = screenPoint, let cy = addAnchorScreen?.y {
+            anchor = CGPoint(x: p.x, y: cy)
+        } else {
+            anchor = screenPoint
+        }
+        fireEffect("fail", anchorScreen: anchor)
     }
 
     /// Back to the most recent 12 month-ends.
