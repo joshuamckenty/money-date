@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var effectFrame: CGRect = .zero
     /// How far the effect drawing surface extends beyond the panel, each side.
     private let effectMargin: CGFloat = 400
+    /// When true, the effect surface covers the whole desktop instead of panel+margin.
+    private var fullScreenEffects = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         store = Store()
@@ -96,7 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// composite over other apps' windows. Kept to the panel + margin for speed,
     /// and repositioned to follow the panel before each fire.
     private func makeEffectWindow() {
-        effectFrame = panelExpandedFrame()
+        effectFrame = effectSurfaceFrame()
         let window = NSPanel(
             contentRect: effectFrame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -113,6 +115,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         effectWindow = window
     }
 
+    /// The current effect surface: full desktop, or the panel grown by `effectMargin`.
+    private func effectSurfaceFrame() -> CGRect {
+        fullScreenEffects ? screenUnionFrame() : panelExpandedFrame()
+    }
+
     /// The panel's frame grown by `effectMargin` on every side (falls back to a
     /// centered box if the panel isn't up yet).
     private func panelExpandedFrame() -> CGRect {
@@ -120,8 +127,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return base.insetBy(dx: -effectMargin, dy: -effectMargin)
     }
 
+    /// The union of all screens (fallback: the main screen).
+    private func screenUnionFrame() -> CGRect {
+        let union = NSScreen.screens.reduce(CGRect.null) { $0.union($1.frame) }
+        return union.isNull ? (NSScreen.main?.frame ?? .zero) : union
+    }
+
     private func repositionEffectWindow() {
-        effectFrame = panelExpandedFrame()
+        effectFrame = effectSurfaceFrame()
         effectWindow.setFrame(effectFrame, display: true)   // relocates across screens
     }
 
@@ -141,6 +154,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Show money-date", action: #selector(showPanel), keyEquivalent: ""))
         menu.addItem(.separator())
+        let fsItem = NSMenuItem(title: "Full-screen effects", action: #selector(toggleFullScreenEffects), keyEquivalent: "")
+        fsItem.state = fullScreenEffects ? .on : .off
+        menu.addItem(fsItem)
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         item.menu = menu
         statusItem = item
@@ -148,6 +165,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func showPanel() {
         panel.orderFrontRegardless()
+    }
+
+    @objc private func toggleFullScreenEffects(_ sender: NSMenuItem) {
+        fullScreenEffects.toggle()
+        sender.state = fullScreenEffects ? .on : .off
+        repositionEffectWindow()
     }
 
     @objc private func quit() {
