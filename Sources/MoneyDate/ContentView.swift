@@ -120,29 +120,35 @@ struct ContentView: View {
     private var table: some View {
         // Left pane (corner + date column) is frozen at the left edge — it lives
         // OUTSIDE the horizontal scroll. The header row and the data rows share ONE
-        // horizontal scroll, so they can never desync horizontally. The only sync
-        // left is the date column tracking the data's vertical scroll.
-        HStack(spacing: 0) {
-            VStack(spacing: 0) {
-                cornerCell
-                Divider().frame(width: Metrics.dateCol)
-                dateColumn
-            }
-            .frame(width: Metrics.dateCol)
+        // horizontal scroll, so they can never desync horizontally. A GeometryReader
+        // bounds the data area's height so the vertical ScrollView always scrolls
+        // (even in a very small window). The date column tracks the body's scroll.
+        GeometryReader { geo in
+            let dataAreaHeight = max(0, geo.size.height - Metrics.header - 1)
+            HStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    cornerCell
+                    Divider().frame(width: Metrics.dateCol)
+                    dateColumn(height: dataAreaHeight)
+                }
+                .frame(width: Metrics.dateCol)
 
-            ScrollView(.horizontal, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 0) {
-                    headerRow
-                    Divider()
-                    dataBody
+                ScrollView(.horizontal, showsIndicators: true) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        headerRow
+                        Divider()
+                        dataBody(height: dataAreaHeight)
+                    }
                 }
             }
+            // Anchor effects at the VISIBLE table center (robust to scrolling).
+            .background(AnchorReporter { store.setAddAnchor($0) })
+            .animation(.easeOut(duration: 0.45), value: store.flashCellKey)
+            .animation(.easeOut(duration: 0.9), value: store.recentlyAddedColumnID)
+            .animation(.easeOut(duration: 0.9), value: store.recentlyAddedRowID)
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: store.displayedColumns.map(\.id))
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: store.displayedRows.map(\.id))
         }
-        .animation(.easeOut(duration: 0.45), value: store.flashCellKey)
-        .animation(.easeOut(duration: 0.9), value: store.recentlyAddedColumnID)
-        .animation(.easeOut(duration: 0.9), value: store.recentlyAddedRowID)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: store.displayedColumns.map(\.id))
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: store.displayedRows.map(\.id))
     }
 
     private var cornerCell: some View {
@@ -152,21 +158,10 @@ struct ContentView: View {
             .padding(.leading, 4)
             .frame(width: Metrics.dateCol, height: Metrics.header, alignment: .leading)
             .background(headerTint)
-            .background(AnchorReporter { point in
-                // Anchor effects at the grid's center: x = horizontal center of the
-                // whole row (date col + all value cols); y = vertical center of the
-                // displayed data cells (down past the header; screen y is up).
-                let cols = CGFloat(store.displayedColumns.count)
-                let dataHeight = CGFloat(store.displayedRows.count) * Metrics.row
-                let rowCenterX = point.x - Metrics.dateCol / 2 + (Metrics.dateCol + cols * Metrics.valueCol) / 2
-                store.setAddAnchor(CGPoint(
-                    x: rowCenterX,
-                    y: point.y - (Metrics.header / 2 + 1 + dataHeight / 2)))
-            })
     }
 
     /// Frozen date column; tracks the data body's vertical scroll.
-    private var dateColumn: some View {
+    private func dateColumn(height: CGFloat) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(store.displayedRows.enumerated()), id: \.element.id) { index, row in
                 dateCell(row).background(rowFill(index))
@@ -174,7 +169,7 @@ struct ContentView: View {
         }
         .frame(width: Metrics.dateCol, alignment: .top)
         .offset(y: scrollOffset.y)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(width: Metrics.dateCol, height: height, alignment: .top)
         .clipped()
     }
 
@@ -187,8 +182,8 @@ struct ContentView: View {
         .background(headerTint)
     }
 
-    /// Vertically-scrolling data rows; the vertical scroll indicator lives here.
-    private var dataBody: some View {
+    /// Vertically-scrolling data rows (height-bounded so the scroller shows).
+    private func dataBody(height: CGFloat) -> some View {
         ScrollView(.vertical, showsIndicators: true) {
             VStack(spacing: 0) {
                 ForEach(Array(store.displayedRows.enumerated()), id: \.element.id) { index, row in
@@ -208,6 +203,7 @@ struct ContentView: View {
                 }
             )
         }
+        .frame(height: height)
         .coordinateSpace(name: "vbody")
         .onPreferenceChange(ScrollOffsetKey.self) { scrollOffset = $0 }
     }
@@ -216,8 +212,9 @@ struct ContentView: View {
 
     private func headerCell(_ column: AmountColumn) -> some View {
         let added = store.recentlyAddedColumnID == column.id
+        let hover = hoveredColumnID == column.id
         return ZStack(alignment: .trailing) {
-            RoundedRectangle(cornerRadius: 4).fill(cellColor(flash: false, added: added))
+            RoundedRectangle(cornerRadius: 4).fill(cellColor(flash: false, added: added, hover: hover))
             Text(Formatters.amount(column.usd, code: store.fromCurrency))
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
@@ -238,8 +235,9 @@ struct ContentView: View {
 
     private func dateCell(_ row: DateRow) -> some View {
         let added = store.recentlyAddedRowID == row.id
+        let hover = hoveredRowID == row.id
         return ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 4).fill(cellColor(flash: false, added: added))
+            RoundedRectangle(cornerRadius: 4).fill(cellColor(flash: false, added: added, hover: hover))
             Text(Formatters.displayDate(row.date, format: store.dateFormat))
                 .font(.system(.body, design: .monospaced))
                 .lineLimit(1)
@@ -260,7 +258,8 @@ struct ContentView: View {
         let key = Store.cellKey(columnID: column.id, date: row.date)
         let isFlash = store.flashCellKey == key
         let isAdded = store.recentlyAddedColumnID == column.id || store.recentlyAddedRowID == row.id
-        let color = cellColor(flash: isFlash, added: isAdded)
+        let isHover = hoveredRowID == row.id || hoveredColumnID == column.id
+        let color = cellColor(flash: isFlash, added: isAdded, hover: isHover)
 
         return ZStack(alignment: .trailing) {
             RoundedRectangle(cornerRadius: 4).fill(color)
@@ -287,6 +286,8 @@ struct ContentView: View {
         }
         .frame(width: Metrics.valueCol, height: Metrics.row)
         .overlay(alignment: .leading) { columnSeparator }
+        .contentShape(Rectangle())
+        .onHover { hoveredRowID = $0 ? row.id : (hoveredRowID == row.id ? nil : hoveredRowID) }
     }
 
     /// Subtle vertical divider between columns / very subtle row striping / header tint.
@@ -312,9 +313,10 @@ struct ContentView: View {
         .help(help)
     }
 
-    private func cellColor(flash: Bool, added: Bool) -> Color {
+    private func cellColor(flash: Bool, added: Bool, hover: Bool = false) -> Color {
         if flash { return Color.green.opacity(0.55) }
         if added { return Color.accentColor.opacity(0.28) }
+        if hover { return Color.accentColor.opacity(0.12) }
         return .clear
     }
 
