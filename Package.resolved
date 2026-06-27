@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "dopamine",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/10in30/dopamine.git",
+      "state" : {
+        "revision" : "222d90d94f814add23403a472e2c9bce32693836",
+        "version" : "0.2.0"
+      }
+    }
+  ],
+  "version" : 2
+}

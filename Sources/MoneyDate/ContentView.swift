@@ -44,6 +44,11 @@ struct ContentView: View {
         }
         .padding(12)
         .frame(minWidth: 420, minHeight: 260)
+        .overlay {
+            EffectsOverlay(event: store.effectEvent)
+                .allowsHitTesting(false)
+                .ignoresSafeArea()
+        }
     }
 
     // MARK: - Controls

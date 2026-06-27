@@ -46,6 +46,14 @@ final class Store: ObservableObject {
     @Published private(set) var recentlyAddedColumnID: UUID?
     @Published private(set) var flashCellKey: String?
 
+    /// A fired Dopamine effect. The monotonic token lets the overlay detect a new fire.
+    struct EffectEvent: Equatable {
+        var token: Int
+        var name: String
+    }
+    @Published private(set) var effectEvent: EffectEvent?
+    private var effectToken = 0
+
     private var inFlight: Set<String> = []
     private var clearAddedTask: Task<Void, Never>?
     private var clearFlashTask: Task<Void, Never>?
@@ -208,6 +216,7 @@ final class Store: ObservableObject {
     private func markAdded(rowID: UUID? = nil, columnID: UUID? = nil) {
         recentlyAddedRowID = rowID
         recentlyAddedColumnID = columnID
+        fireEffect("confetti")
         clearAddedTask?.cancel()
         clearAddedTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_200_000_000)
@@ -219,12 +228,19 @@ final class Store: ObservableObject {
 
     private func flash(cellKey: String) {
         flashCellKey = cellKey
+        fireEffect("ripple")
         clearFlashTask?.cancel()
         clearFlashTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 700_000_000)
             guard !Task.isCancelled else { return }
             self?.flashCellKey = nil
         }
+    }
+
+    /// Fire a Dopamine effect by name; the monotonic token signals a new play.
+    private func fireEffect(_ name: String) {
+        effectToken += 1
+        effectEvent = EffectEvent(token: effectToken, name: name)
     }
 
     // MARK: - Rates
