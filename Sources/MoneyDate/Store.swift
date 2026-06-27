@@ -73,9 +73,18 @@ final class Store: ObservableObject {
     /// view; effect anchors are computed from it. The visible row center x (for
     /// row deletes) is reported separately.
     private var dataRectScreen: CGRect?
-    private var tableCenterScreenX: CGFloat?
+    private var tableRectScreen: CGRect?
     func setDataRect(_ rect: CGRect?) { dataRectScreen = rect }
-    func setTableCenterX(_ x: CGFloat?) { tableCenterScreenX = x }
+    func setTableRect(_ rect: CGRect?) { tableRectScreen = rect }
+
+    /// Horizontal center of the visible row content: from the date column's left
+    /// edge to the lesser of the value-content right and the viewport right (so it's
+    /// the content center when few columns, the viewport center when scrolled wide).
+    private var rowCenterScreenX: CGFloat? {
+        guard let t = tableRectScreen else { return nil }
+        guard let d = dataRectScreen else { return t.midX }
+        return (t.minX + min(d.maxX, t.maxX)) / 2
+    }
 
     /// Center of value column `index` (0 = leftmost = newest), at the column's data
     /// vertical center.
@@ -169,7 +178,7 @@ final class Store: ObservableObject {
         saveState()
         // Center the fail across the whole row: visible row center x, deleted row's y.
         let anchor: CGPoint?
-        if let p = screenPoint, let cx = tableCenterScreenX {
+        if let p = screenPoint, let cx = rowCenterScreenX {
             anchor = CGPoint(x: cx, y: p.y)
         } else {
             anchor = screenPoint

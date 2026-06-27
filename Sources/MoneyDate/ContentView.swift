@@ -141,8 +141,8 @@ struct ContentView: View {
                     }
                 }
             }
-            // Visible row center x (for row deletes), robust to horizontal scroll.
-            .background(AnchorReporter { store.setTableCenterX($0.midX) })
+            // Full table rect (date col + visible value viewport), for row-delete centering.
+            .background(AnchorReporter { store.setTableRect($0) })
             .animation(.easeOut(duration: 0.45), value: store.flashCellKey)
             .animation(.easeOut(duration: 0.9), value: store.recentlyAddedColumnID)
             .animation(.easeOut(duration: 0.9), value: store.recentlyAddedRowID)
