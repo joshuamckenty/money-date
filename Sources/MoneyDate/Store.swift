@@ -139,14 +139,16 @@ final class Store: ObservableObject {
         fetchRate(for: date)
     }
 
-    func deleteRow(id: UUID) {
+    func deleteRow(id: UUID, at screenPoint: CGPoint? = nil) {
         rows.removeAll { $0.id == id }
         saveState()
+        fireEffect("fail", anchorScreen: screenPoint)
     }
 
-    func deleteColumn(id: UUID) {
+    func deleteColumn(id: UUID, at screenPoint: CGPoint? = nil) {
         columns.removeAll { $0.id == id }
         saveState()
+        fireEffect("fail", anchorScreen: screenPoint)
     }
 
     /// Back to the most recent 12 month-ends.
@@ -224,7 +226,7 @@ final class Store: ObservableObject {
         guard let value = convertedValue(amount: column.usd, date: date) else { return false }
         Clipboard.shared.copy(Formatters.plain(value))
         flash(cellKey: Self.cellKey(columnID: column.id, date: date))
-        fireEffect("ripple", anchorScreen: screenPoint)
+        fireEffect("solarbloom", anchorScreen: screenPoint)
         return true
     }
 

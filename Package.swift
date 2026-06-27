@@ -14,6 +14,8 @@ let package = Package(
                 .product(name: "DopamineCore", package: "dopamine"),
                 .product(name: "DopamineEffectConfetti", package: "dopamine"),
                 .product(name: "DopamineEffectRipple", package: "dopamine"),
+                .product(name: "DopamineEffectFail", package: "dopamine"),
+                .product(name: "DopamineEffectSolarbloom", package: "dopamine"),
             ],
             path: "Sources/MoneyDate"
         )

@@ -44,8 +44,6 @@ struct ContentView: View {
             }
 
             footer
-
-            copyright
         }
         .padding(12)
         .frame(minWidth: 420, minHeight: 260)
@@ -60,13 +58,6 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private var copyright: some View {
-        Text("© 2026 Joshua McKenty")
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-            .frame(maxWidth: .infinity, alignment: .center)
     }
 
     // MARK: - Controls
@@ -228,7 +219,7 @@ struct ContentView: View {
         }
         .overlay(alignment: .topTrailing) {
             if hoveredColumnID == column.id {
-                deleteButton("Delete column") { store.deleteColumn(id: column.id) }
+                deleteButton("Delete column") { store.deleteColumn(id: column.id, at: NSEvent.mouseLocation) }
             }
         }
         .frame(width: Metrics.valueCol, height: Metrics.header)
@@ -246,7 +237,7 @@ struct ContentView: View {
         }
         .overlay(alignment: .trailing) {
             if hoveredRowID == row.id {
-                deleteButton("Delete row") { store.deleteRow(id: row.id) }
+                deleteButton("Delete row") { store.deleteRow(id: row.id, at: NSEvent.mouseLocation) }
             }
         }
         .frame(width: Metrics.dateCol, height: Metrics.row)
@@ -328,14 +319,19 @@ struct ContentView: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             Spacer()
-            if store.hiddenColumnCount > 0 || store.hiddenRowCount > 0 {
-                Text("+\(store.hiddenColumnCount) cols · +\(store.hiddenRowCount) rows hidden")
+            VStack(alignment: .trailing, spacing: 1) {
+                if store.hiddenColumnCount > 0 || store.hiddenRowCount > 0 {
+                    Text("+\(store.hiddenColumnCount) cols · +\(store.hiddenRowCount) rows hidden")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Text("© 2026 Joshua McKenty")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Text("build \(Self.buildStamp)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
-            Text("build \(Self.buildStamp)")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
         }
     }
 

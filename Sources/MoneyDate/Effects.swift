@@ -5,6 +5,8 @@ import simd
 import DopamineCore
 import DopamineEffectConfetti
 import DopamineEffectRipple
+import DopamineEffectFail
+import DopamineEffectSolarbloom
 
 /// Type-erases `MetalOverlayHost<Config>` (generic per effect) so hosts for
 /// different effects can be held in one place. All members are already public.
@@ -25,8 +27,9 @@ private struct EffectFactory {
 /// Per-effect "feeling" (mood ∈ celebratory/electric/serene). Tweak intensity
 /// (0…1) and whimsy (0…1) to scale each effect's energy.
 private let effectFeelings: [String: (mood: String, intensity: Double, whimsy: Double)] = [
-    "confetti": ("electric", 0.03, 0.5),
-    "ripple":   ("celebratory", 0.75, 0.1),
+    "confetti":   ("electric", 0.03, 0.5),
+    "solarbloom": ("electric", 0.0, 0.22),
+    "fail":       ("electric", 0.0, 0.22),
 ]
 private let defaultFeeling = (mood: "celebratory", intensity: 0.85, whimsy: 0.5)
 
@@ -43,6 +46,20 @@ private let effectFactories: [String: EffectFactory] = [
               let host = try? MetalOverlayHost(config: Ripple.passConfig(), device: device,
                                                library: lib, wantsShadow: false),
               let fx = try? Ripple() else { return nil }
+        return (host, { (try? fx.resolve($0)) ?? [:] })
+    },
+    "solarbloom": EffectFactory { device in
+        guard let lib = try? device.makeDefaultLibrary(bundle: SolarbloomResources.bundle),
+              let host = try? MetalOverlayHost(config: Solarbloom.passConfig(), device: device,
+                                               library: lib, wantsShadow: false),
+              let fx = try? Solarbloom() else { return nil }
+        return (host, { (try? fx.resolve($0)) ?? [:] })
+    },
+    "fail": EffectFactory { device in
+        guard let lib = try? device.makeDefaultLibrary(bundle: FailResources.bundle),
+              let host = try? MetalOverlayHost(config: Fail.passConfig(), device: device,
+                                               library: lib, wantsShadow: false),
+              let fx = try? Fail() else { return nil }
         return (host, { (try? fx.resolve($0)) ?? [:] })
     },
 ]
