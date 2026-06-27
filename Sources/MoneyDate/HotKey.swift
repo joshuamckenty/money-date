@@ -7,11 +7,11 @@ struct HotKeyConfig: Codable, Equatable {
     var modifiers: UInt32
     var display: String
 
-    /// Rare default: ⌃⌥⌘C (Control-Option-Command-C), unlikely to collide with app shortcuts.
+    /// Default: ⌘F1.
     static let `default` = HotKeyConfig(
-        keyCode: UInt32(kVK_ANSI_C),
-        modifiers: UInt32(controlKey | optionKey | cmdKey),
-        display: "⌃⌥⌘C")
+        keyCode: UInt32(kVK_F1),
+        modifiers: UInt32(cmdKey),
+        display: "⌘F1")
 
     /// Convert AppKit modifier flags into a Carbon modifier mask.
     static func carbonModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {
