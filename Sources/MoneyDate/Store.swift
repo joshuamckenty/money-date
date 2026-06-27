@@ -25,6 +25,7 @@ private struct AppSettings: Codable {
     var hotKey: HotKeyConfig
     var fromCurrency: String
     var toCurrency: String
+    var dateFormat: String?   // optional for backward compat with older settings.json
 }
 
 /// Owns all app state: the date rows, the USD columns, and the cached USD→CAD rates.
@@ -43,6 +44,7 @@ final class Store: ObservableObject {
     @Published private(set) var hotKeyConfig: HotKeyConfig = .default
     @Published private(set) var fromCurrency: String = "USD"
     @Published private(set) var toCurrency: String = "CAD"
+    @Published private(set) var dateFormat: String = "yyyy-MM-dd"
     @Published var selectedYear: Int
 
     // Transient highlight state for visual feedback (auto-cleared after a short delay).
@@ -168,6 +170,12 @@ final class Store: ObservableObject {
     /// Update and persist the global copy hotkey. AppDelegate observes this and re-registers.
     func setHotKey(_ config: HotKeyConfig) {
         hotKeyConfig = config
+        saveSettings()
+    }
+
+    /// Update and persist the first-column date display format.
+    func setDateFormat(_ format: String) {
+        dateFormat = format
         saveSettings()
     }
 
@@ -346,6 +354,7 @@ final class Store: ObservableObject {
             hotKeyConfig = settings.hotKey
             if Currency.isValid(settings.fromCurrency) { fromCurrency = settings.fromCurrency }
             if Currency.isValid(settings.toCurrency) { toCurrency = settings.toCurrency }
+            if let fmt = settings.dateFormat, !fmt.isEmpty { dateFormat = fmt }
         } else if let legacy = try? JSONDecoder().decode(HotKeyConfig.self, from: data) {
             // Backward compat: settings.json used to hold a bare HotKeyConfig.
             hotKeyConfig = legacy
@@ -354,7 +363,8 @@ final class Store: ObservableObject {
 
     private func saveSettings() {
         guard let url = try? Self.settingsURL() else { return }
-        let settings = AppSettings(hotKey: hotKeyConfig, fromCurrency: fromCurrency, toCurrency: toCurrency)
+        let settings = AppSettings(hotKey: hotKeyConfig, fromCurrency: fromCurrency,
+                                   toCurrency: toCurrency, dateFormat: dateFormat)
         if let data = try? JSONEncoder().encode(settings) {
             try? data.write(to: url, options: .atomic)
         }

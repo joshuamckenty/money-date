@@ -29,6 +29,10 @@ struct ContentView: View {
         return Array((current - 25)...(current + 1)).reversed()
     }
 
+    static let dateFormatOptions = ["yyyy-MM-dd", "MM/dd/yyyy", "dd/MM/yyyy", "MMM d, yyyy", "d MMM yyyy"]
+    /// A fixed sample date so the format-picker labels are stable.
+    static let sampleDate = DateUtils.calendar.date(from: DateComponents(year: 2024, month: 12, day: 31)) ?? Date()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
@@ -77,6 +81,16 @@ struct ContentView: View {
             .onChange(of: store.selectedYear) { newValue in
                 store.populate(year: newValue)
             }
+
+            Picker("Date format", selection: Binding(
+                get: { store.dateFormat },
+                set: { store.setDateFormat($0) })) {
+                ForEach(Self.dateFormatOptions, id: \.self) { fmt in
+                    Text(Formatters.displayDate(Self.sampleDate, format: fmt)).tag(fmt)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 130)
 
             Spacer()
 
@@ -152,12 +166,13 @@ struct ContentView: View {
             .foregroundStyle(.secondary)
             .frame(width: Metrics.dateCol, height: Metrics.header, alignment: .leading)
             .background(AnchorReporter { point in
-                // From the corner cell's center to the first VALUE cell's center:
-                // right by half the date col + half a value col; down past the
-                // header into the first data row (screen y is up, so down is -).
+                // Center over the whole first VALUE column: x = first value column
+                // center (half date col + half value col right); y = vertical center
+                // of the displayed data cells (down past the header; screen y is up).
+                let dataHeight = CGFloat(store.displayedRows.count) * Metrics.row
                 store.setAddAnchor(CGPoint(
                     x: point.x + Metrics.dateCol / 2 + Metrics.valueCol / 2,
-                    y: point.y - (Metrics.header / 2 + Metrics.row / 2 + 1)))
+                    y: point.y - (Metrics.header / 2 + 1 + dataHeight / 2)))
             })
     }
 
@@ -231,8 +246,10 @@ struct ContentView: View {
         let added = store.recentlyAddedRowID == row.id
         return ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: 4).fill(cellColor(flash: false, added: added))
-            Text(Formatters.dayKey(row.date))
+            Text(Formatters.displayDate(row.date, format: store.dateFormat))
                 .font(.system(.body, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
                 .padding(.leading, 4)
         }
         .overlay(alignment: .trailing) {

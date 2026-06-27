@@ -27,6 +27,23 @@ enum Formatters {
 
     static func dayKey(_ date: Date) -> String { isoDay.string(from: date) }
 
+    private static var displayFormatters: [String: DateFormatter] = [:]
+
+    /// Format a date for display using an arbitrary pattern (cached per pattern).
+    /// Distinct from `dayKey`, which stays yyyy-MM-dd for cache/API keys.
+    static func displayDate(_ date: Date, format: String) -> String {
+        if let existing = displayFormatters[format] {
+            return existing.string(from: date)
+        }
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.calendar = DateUtils.calendar
+        df.timeZone = TimeZone.current
+        df.dateFormat = format
+        displayFormatters[format] = df
+        return df.string(from: date)
+    }
+
     /// Formatted amount in the given currency, e.g. "US$1,234.56" or "C$1,655.43".
     static func amount(_ value: Double, code: String) -> String {
         currencyFormatter(code).string(from: NSNumber(value: value))
