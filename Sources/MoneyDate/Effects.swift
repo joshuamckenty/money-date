@@ -25,8 +25,8 @@ private struct EffectFactory {
 /// Per-effect "feeling" (mood ∈ celebratory/electric/serene). Tweak intensity
 /// (0…1) and whimsy (0…1) to scale each effect's energy.
 private let effectFeelings: [String: (mood: String, intensity: Double, whimsy: Double)] = [
-    "confetti": ("celebratory", 0.85, 0.5),
-    "ripple":   ("serene", 0.35, 0.2),
+    "confetti": ("electric", 0.03, 0.5),
+    "ripple":   ("celebratory", 0.75, 0.1),
 ]
 private let defaultFeeling = (mood: "celebratory", intensity: 0.85, whimsy: 0.5)
 
