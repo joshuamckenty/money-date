@@ -5,7 +5,7 @@ let package = Package(
     name: "MoneyDate",
     platforms: [.macOS(.v14)],
     dependencies: [
-        .package(url: "https://github.com/10in30/dopamine.git", from: "0.4.0")
+        .package(url: "https://github.com/10in30/dopamine.git", from: "0.6.0")
     ],
     targets: [
         .executableTarget(

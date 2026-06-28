@@ -12,36 +12,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var hotKey: HotKey?
     private var statusItem: NSStatusItem?
     private var cancellables = Set<AnyCancellable>()
-    private var effectWindow: NSPanel!
-    private let effectView = EffectOverlayView(frame: .zero)
-    private var effectFrame: CGRect = .zero
-    /// How far the effect drawing surface extends beyond the panel, each side.
-    private let effectMargin: CGFloat = 400
-    /// When true, the effect surface covers the whole desktop instead of panel+margin.
-    private var fullScreenEffects = false
+    /// Owns Dopamine's `DesktopEffectOverlay` (tracking panel + radial fade + tick) and the
+    /// per-effect host cache. Created once the panel exists.
+    private var effects: EffectCoordinator!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         store = Store()
 
         makePanel()
-        makeEffectWindow()
+        effects = EffectCoordinator(tracking: panel, margin: 200)
         makeStatusItem()
 
-        // Keep the effect overlay tracking the panel — including across displays.
-        for note in [NSWindow.didMoveNotification, NSWindow.didChangeScreenNotification] {
-            NotificationCenter.default.addObserver(forName: note, object: panel, queue: .main) { [weak self] _ in
-                self?.repositionEffectWindow()
-            }
-        }
-
-        // Drive Dopamine effects on the full-screen overlay, anchored at the table.
+        // Drive Dopamine effects on the desktop overlay, anchored at the table.
         store.$effectEvent
             .compactMap { $0 }
             .removeDuplicates()
             .sink { [weak self] event in
                 guard let self else { return }
-                self.repositionEffectWindow()   // keep the surface around the panel
-                self.effectView.fire(name: event.name, anchor: self.overlayAnchor(for: event))
+                // Pass the raw global screen point; the overlay maps it to surface-local.
+                let anchor = event.anchorScreen ?? self.panel.frame.center
+                self.effects.fire(name: event.name, anchorScreen: anchor)
             }
             .store(in: &cancellables)
 
@@ -92,60 +82,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.panel = panel
     }
 
-    /// A transparent, click-through overlay window hosting the Metal effects so they
-    /// composite over other apps' windows. Kept to the panel + margin for speed,
-    /// and repositioned to follow the panel before each fire.
-    private func makeEffectWindow() {
-        effectFrame = effectSurfaceFrame()
-        let window = NSPanel(
-            contentRect: effectFrame,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false)
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.hasShadow = false
-        window.ignoresMouseEvents = true            // never intercept clicks
-        window.level = .screenSaver                 // above other apps' windows
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        window.contentView = effectView
-        window.orderFrontRegardless()               // never key/main
-        effectWindow = window
-    }
-
-    /// The current effect surface: full desktop, or the panel grown by `effectMargin`.
-    private func effectSurfaceFrame() -> CGRect {
-        fullScreenEffects ? screenUnionFrame() : panelExpandedFrame()
-    }
-
-    /// The panel's frame grown by `effectMargin` on every side (falls back to a
-    /// centered box if the panel isn't up yet).
-    private func panelExpandedFrame() -> CGRect {
-        let base = panel?.frame ?? CGRect(x: 0, y: 0, width: 460, height: 320)
-        return base.insetBy(dx: -effectMargin, dy: -effectMargin)
-    }
-
-    /// The union of all screens (fallback: the main screen).
-    private func screenUnionFrame() -> CGRect {
-        let union = NSScreen.screens.reduce(CGRect.null) { $0.union($1.frame) }
-        return union.isNull ? (NSScreen.main?.frame ?? .zero) : union
-    }
-
-    private func repositionEffectWindow() {
-        effectFrame = effectSurfaceFrame()
-        effectWindow.setFrame(effectFrame, display: true)   // relocates across screens
-    }
-
-    /// Where the effect should originate, in the overlay view's flipped (top-left)
-    /// local coords: the event's screen anchor (the clicked cell) if present,
-    /// otherwise the table panel's center.
-    private func overlayAnchor(for event: Store.EffectEvent) -> CGPoint? {
-        let screenPoint = event.anchorScreen ?? panel?.frame.center
-        guard let p = screenPoint else { return nil }
-        return CGPoint(x: p.x - effectFrame.minX,        // global bottom-left → overlay
-                       y: effectFrame.maxY - p.y)         // → top-left origin
-    }
-
     private func makeStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "$⇄"
@@ -153,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(NSMenuItem(title: "Show money-date", action: #selector(showPanel), keyEquivalent: ""))
         menu.addItem(.separator())
         let fsItem = NSMenuItem(title: "Full-screen effects", action: #selector(toggleFullScreenEffects), keyEquivalent: "")
-        fsItem.state = fullScreenEffects ? .on : .off
+        fsItem.state = MainActor.assumeIsolated { effects.overlay.coversWholeScreen } ? .on : .off
         menu.addItem(fsItem)
 
         let dateMenu = NSMenu()
@@ -180,9 +116,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func toggleFullScreenEffects(_ sender: NSMenuItem) {
-        fullScreenEffects.toggle()
-        sender.state = fullScreenEffects ? .on : .off
-        repositionEffectWindow()
+        MainActor.assumeIsolated {
+            effects.overlay.coversWholeScreen.toggle()
+            sender.state = effects.overlay.coversWholeScreen ? .on : .off
+        }
     }
 
     @objc private func selectDateFormat(_ sender: NSMenuItem) {

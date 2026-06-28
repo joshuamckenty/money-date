@@ -1,30 +1,18 @@
 import AppKit
 import Metal
-import QuartzCore
-import simd
 import DopamineCore
 import DopamineEffectConfetti
 import DopamineEffectRipple
 import DopamineEffectFail
 import DopamineEffectSolarbloom
 
-/// Type-erases `MetalOverlayHost<Config>` (generic per effect) so hosts for
-/// different effects can be held in one place. All members are already public.
-protocol AnyEffectHost: AnyObject {
-    var lightLayer: CAMetalLayer { get }
-    var timeScale: Double { get set }
-    func prepare(params: [String: DopeValue]) throws
-    func play()
-    func tick(now: CFTimeInterval, dpr: Float, anchorPx: SIMD2<Float>, targetPx: SIMD2<Float>)
-    /// Hosts the overlay layer in `view` with orientation handled correctly
-    /// (sets isGeometryFlipped per view.isFlipped). The single correct attach path.
-    func attach(to view: NSView)
-}
-extension MetalOverlayHost: AnyEffectHost {}
-
-/// Builds an effect's host (from its own metallib bundle) + a feeling→params resolver.
+/// Builds an effect's host (from its own metallib bundle) + a `prepare` closure that
+/// resolves a feeling and prepares the (concretely-typed) host, returning the params
+/// it was prepared with. `prepare` is captured over the concrete `MetalOverlayHost`
+/// because `prepare(params:)` lives there, not on the type-erased `DopamineEffectHost`.
 private struct EffectFactory {
-    let build: (MTLDevice) -> (host: any AnyEffectHost, resolve: (DopeResolveInput) -> [String: DopeValue])?
+    let build: (MTLDevice) -> (host: any DopamineEffectHost,
+                               prepare: (DopeResolveInput) -> [String: DopeValue])?
 }
 
 /// Per-effect "feeling" (mood ∈ celebratory/electric/serene). Tweak intensity
@@ -44,163 +32,92 @@ private let effectTargetSizes: [String: CGSize] = [
 ]
 private let defaultTargetSize = CGSize(width: 150, height: 150)
 
+/// Resolve `fx` with the feeling, prepare the concretely-typed `host`, and return the
+/// params it was prepared with (so the caller can read `durationMs`).
+private func prepareClosure<C: PassConfig, E: DopamineCore.EffectFactory>(
+    _ host: MetalOverlayHost<C>, _ fx: E
+) -> (DopeResolveInput) -> [String: DopeValue] {
+    { input in
+        let params = (try? fx.resolve(input)) ?? [:]
+        try? host.prepare(params: params)
+        return params
+    }
+}
+
 private let effectFactories: [String: EffectFactory] = [
     "confetti": EffectFactory { device in
         guard let lib = try? device.makeDefaultLibrary(bundle: ConfettiResources.bundle),
               let host = try? MetalOverlayHost(config: Confetti.passConfig(), device: device,
                                                library: lib, wantsShadow: false),
               let fx = try? Confetti() else { return nil }
-        return (host, { (try? fx.resolve($0)) ?? [:] })
+        return (host, prepareClosure(host, fx))
     },
     "ripple": EffectFactory { device in
         guard let lib = try? device.makeDefaultLibrary(bundle: RippleResources.bundle),
               let host = try? MetalOverlayHost(config: Ripple.passConfig(), device: device,
                                                library: lib, wantsShadow: false),
               let fx = try? Ripple() else { return nil }
-        return (host, { (try? fx.resolve($0)) ?? [:] })
+        return (host, prepareClosure(host, fx))
     },
     "solarbloom": EffectFactory { device in
         guard let lib = try? device.makeDefaultLibrary(bundle: SolarbloomResources.bundle),
               let host = try? MetalOverlayHost(config: Solarbloom.passConfig(), device: device,
                                                library: lib, wantsShadow: false),
               let fx = try? Solarbloom() else { return nil }
-        return (host, { (try? fx.resolve($0)) ?? [:] })
+        return (host, prepareClosure(host, fx))
     },
     "fail": EffectFactory { device in
         guard let lib = try? device.makeDefaultLibrary(bundle: FailResources.bundle),
               let host = try? MetalOverlayHost(config: Fail.passConfig(), device: device,
                                                library: lib, wantsShadow: false),
               let fx = try? Fail() else { return nil }
-        return (host, { (try? fx.resolve($0)) ?? [:] })
+        return (host, prepareClosure(host, fx))
     },
 ]
 
-/// Hosts the current effect's Metal layer and drives a display-link tick.
-/// Pointer-transparent and idle (no GPU) until an effect is fired.
-final class EffectOverlayView: NSView {
+/// Owns Dopamine's `DesktopEffectOverlay` (the borderless, click-through, screen-saver-level
+/// panel that bleeds effects past the app window with a radial fade and tracks it across
+/// moves/displays) plus a per-effect host cache, and fires effects onto it.
+@MainActor
+final class EffectCoordinator {
     private struct Prepared {
-        let host: any AnyEffectHost
-        let resolve: (DopeResolveInput) -> [String: DopeValue]
+        let host: any DopamineEffectHost
+        let prepare: (DopeResolveInput) -> [String: DopeValue]
     }
 
+    /// The desktop overlay. Exposed so the status menu can toggle whole-screen mode.
+    let overlay: DesktopEffectOverlay
     private let device = MTLCreateSystemDefaultDevice()
     private var hosts: [String: Prepared] = [:]
-    private var currentName: String?
-    private var vsync: CADisplayLink?
-    private var activeUntil: CFTimeInterval = 0
-    /// Radial alpha mask: effects fade out toward the overlay edges.
-    private let fadeMask = CAGradientLayer()
-    /// Where the effect emanates from, in this view's (flipped) local coords. nil = center.
-    private var anchorPoint: CGPoint?
-    /// Target box size (points) the effect concentrates within. .zero = effect default.
-    private var targetSize: CGSize = .zero
 
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.clear.cgColor
-
-        fadeMask.type = .radial
-        fadeMask.colors = [NSColor.white.cgColor, NSColor.white.cgColor, NSColor.clear.cgColor]
-        fadeMask.locations = [0.0, 0.55, 1.0]
-        fadeMask.startPoint = CGPoint(x: 0.5, y: 0.5)
-        fadeMask.endPoint = CGPoint(x: 1.0, y: 1.0)
-        layer?.mask = fadeMask
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) unused") }
-
-    /// Top-left origin to match SwiftUI's coordinate space.
-    override var isFlipped: Bool { true }
-    /// Never intercept clicks — effects play over the live table.
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if window != nil { startDisplayLink() }
-    }
-
-    private func startDisplayLink() {
-        guard vsync == nil else { return }
-        let link = displayLink(target: self, selector: #selector(tick))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
-        link.add(to: .main, forMode: .common)
-        link.isPaused = true   // idle until first fire
-        vsync = link
-    }
-
-    // Cap at 2× (native Retina); enough for crisp effects without over-sampling.
-    private var renderScale: CGFloat { min(window?.backingScaleFactor ?? 2, 2.0) }
-
-    private func canvasPx() -> CGSize {
-        let scale = renderScale
-        return CGSize(width: max(bounds.width, 1) * scale, height: max(bounds.height, 1) * scale)
+    init(tracking window: NSWindow, margin: CGFloat = 200) {
+        overlay = DesktopEffectOverlay(tracking: window, margin: margin)
     }
 
     private func prepared(_ name: String) -> Prepared? {
         if let existing = hosts[name] { return existing }
         guard let device, let built = effectFactories[name]?.build(device) else { return nil }
-        built.host.lightLayer.isOpaque = false
-        built.host.lightLayer.contentsScale = renderScale
-        built.host.lightLayer.drawableSize = canvasPx()
-        let prepared = Prepared(host: built.host, resolve: built.resolve)
+        let prepared = Prepared(host: built.host, prepare: built.prepare)
         hosts[name] = prepared
         return prepared
     }
 
-    /// Re-resolve with a fresh seed, prepare, and play the named effect at `anchor`
-    /// (this view's flipped local coords; nil = center). The target box size is
-    /// looked up per effect.
-    func fire(name: String, anchor: CGPoint? = nil) {
-        anchorPoint = anchor
-        self.targetSize = effectTargetSizes[name] ?? defaultTargetSize
+    /// Re-resolve with a fresh seed, prepare, and present the named effect on the overlay.
+    /// `anchorScreen` is a global screen point (AppKit bottom-left origin) the burst emanates
+    /// from; nil centres it on the surface. The overlay maps it to surface-local itself.
+    func fire(name: String, anchorScreen: CGPoint?) {
         guard let prepared = prepared(name) else { return }
-        if currentName != name {
-            if let cur = currentName { hosts[cur]?.host.lightLayer.removeFromSuperlayer() }
-            let l = prepared.host.lightLayer
-            l.frame = bounds
-            l.contentsScale = renderScale
-            l.drawableSize = canvasPx()
-            // attach(to:) hosts the layer with correct orientation (isGeometryFlipped
-            // per self.isFlipped) — the single correct path; don't addSublayer manually.
-            prepared.host.attach(to: self)
-            currentName = name
-        }
+        // Size the drawable to the overlay surface BEFORE prepare so hybrid panel textures
+        // (confetti/solarbloom) build at the surface size, not the window's.
+        prepared.host.lightLayer.drawableSize = overlay.surfaceSizePx
         let f = effectFeelings[name] ?? defaultFeeling
         let feeling = DopeResolveInput(mood: f.mood, intensity: f.intensity, whimsy: f.whimsy, seed: randomSeed())
-        let params = prepared.resolve(feeling)
-        try? prepared.host.prepare(params: params)
-        prepared.host.play()
+        let params = prepared.prepare(feeling)
 
         var durationMs = 1800.0
         if case let .number(value)? = params["durationMs"] { durationMs = value }
-        activeUntil = CACurrentMediaTime() + durationMs / 1000.0 + 0.5
-        vsync?.isPaused = false
-    }
-
-    override func layout() {
-        super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)   // no implicit animation on resize/move
-        fadeMask.frame = bounds
-        if let name = currentName, let prepared = hosts[name] {
-            let l = prepared.host.lightLayer
-            l.frame = bounds
-            l.contentsScale = renderScale
-            l.drawableSize = canvasPx()
-        }
-        CATransaction.commit()
-    }
-
-    @objc private func tick() {
-        let now = CACurrentMediaTime()
-        if now > activeUntil {            // faded out → stop rendering entirely
-            vsync?.isPaused = true
-            return
-        }
-        guard let name = currentName, let prepared = hosts[name] else { return }
-        let c = anchorPoint ?? CGPoint(x: bounds.midX, y: bounds.midY)
-        let anchor = SIMD2<Float>(Float(c.x), Float(c.y))
-        let target = SIMD2<Float>(Float(targetSize.width), Float(targetSize.height))
-        prepared.host.tick(now: now, dpr: Float(renderScale), anchorPx: anchor, targetPx: target)
+        overlay.present(prepared.host, durationMs: durationMs,
+                        anchorScreen: anchorScreen,
+                        targetSizePt: effectTargetSizes[name] ?? defaultTargetSize)
     }
 }
